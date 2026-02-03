@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from 'react'
-import { generalApi } from '../api/client'
+import { useEffect, useState } from 'react'
+import { Package, CheckCircle, Server01 } from '@untitledui/icons'
+import { generalApi } from '@/api/client'
+import { cx } from '@/utils/cx'
 
 interface Stats {
   total_repositories: number
   total_cloned: number
   total_deployed: number
-  categories: Array<{ name: string; count: number }>
+  categories: Array<{ category: string; count: number }>
 }
 
-export const Dashboard: React.FC = () => {
+export function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -28,49 +30,61 @@ export const Dashboard: React.FC = () => {
   }
 
   if (loading || !stats) {
-    return <div className="text-center py-8">Loading...</div>
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-brand-500)] border-t-transparent"></div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+      <h2 className="text-[length:var(--text-display-xs)] font-semibold text-[var(--color-fg-primary)]">
+        Dashboard
+      </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
           title="Total Repositories"
           value={stats.total_repositories}
-          icon="📦"
-          color="bg-blue-100"
+          icon={<Package className="size-6" />}
+          variant="brand"
         />
         <StatCard
           title="Cloned"
           value={stats.total_cloned}
-          icon="✓"
-          color="bg-green-100"
+          icon={<CheckCircle className="size-6" />}
+          variant="success"
         />
         <StatCard
           title="Deployed"
           value={stats.total_deployed}
-          icon="🐳"
-          color="bg-purple-100"
+          icon={<Server01 className="size-6" />}
+          variant="purple"
         />
       </div>
 
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Repositories by Category</h2>
-        <div className="space-y-2">
-          {stats.categories.map((cat) => (
-            <div key={cat.name} className="flex items-center">
-              <span className="text-sm font-medium text-gray-700 w-24">{cat.name}</span>
-              <div className="flex-1 bg-gray-200 rounded-full h-2 mx-4">
+      <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-[var(--shadow-sm)] border border-[var(--color-border-secondary)] p-6">
+        <h3 className="text-[length:var(--text-lg)] font-semibold text-[var(--color-fg-primary)] mb-4">
+          Repositories by Category
+        </h3>
+        <div className="space-y-3">
+          {stats.categories?.map((cat) => (
+            <div key={cat?.category || 'unknown'} className="flex items-center gap-4">
+              <span className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-secondary)] w-24 capitalize">
+                {cat?.category?.replace('_', ' ') || 'Unknown'}
+              </span>
+              <div className="flex-1 bg-[var(--color-bg-tertiary)] rounded-full h-2">
                 <div
-                  className="bg-blue-500 h-2 rounded-full"
+                  className="bg-[var(--color-brand-500)] h-2 rounded-full transition-all duration-500"
                   style={{
-                    width: `${(cat.count / stats.total_repositories) * 100}%`
+                    width: `${stats.total_repositories > 0 ? ((cat?.count || 0) / stats.total_repositories) * 100 : 0}%`,
                   }}
-                ></div>
+                />
               </div>
-              <span className="text-sm font-semibold text-gray-700 w-12 text-right">{cat.count}</span>
+              <span className="text-[length:var(--text-sm)] font-semibold text-[var(--color-fg-primary)] w-8 text-right">
+                {cat?.count || 0}
+              </span>
             </div>
           ))}
         </div>
@@ -82,14 +96,46 @@ export const Dashboard: React.FC = () => {
 interface StatCardProps {
   title: string
   value: number
-  icon: string
-  color: string
+  icon: React.ReactNode
+  variant: 'brand' | 'success' | 'purple'
 }
 
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
-  <div className={`${color} rounded-lg shadow-md p-6`}>
-    <div className="text-3xl mb-2">{icon}</div>
-    <p className="text-sm text-gray-600">{title}</p>
-    <p className="text-3xl font-bold text-gray-900">{value}</p>
-  </div>
-)
+const variantStyles = {
+  brand: {
+    bg: 'bg-[var(--color-brand-50)]',
+    icon: 'text-[var(--color-brand-600)]',
+    border: 'border-[var(--color-brand-100)]',
+  },
+  success: {
+    bg: 'bg-[var(--color-success-50)]',
+    icon: 'text-[var(--color-success-600)]',
+    border: 'border-[var(--color-success-100)]',
+  },
+  purple: {
+    bg: 'bg-[var(--color-purple-50)]',
+    icon: 'text-[var(--color-purple-600)]',
+    border: 'border-[var(--color-purple-100)]',
+  },
+}
+
+function StatCard({ title, value, icon, variant }: StatCardProps) {
+  const styles = variantStyles[variant]
+
+  return (
+    <div
+      className={cx(
+        'rounded-[var(--radius-xl)] p-6 border',
+        styles.bg,
+        styles.border
+      )}
+    >
+      <div className={cx('mb-3', styles.icon)}>{icon}</div>
+      <p className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)]">
+        {title}
+      </p>
+      <p className="text-[length:var(--text-display-xs)] font-semibold text-[var(--color-fg-primary)] mt-1">
+        {value}
+      </p>
+    </div>
+  )
+}

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker restart:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)",
+      "Bash(move:*)",
+      "WebFetch(domain:www.untitledui.com)",
+      "Bash(docker-compose down:*)"
+    ]
+  }
+}

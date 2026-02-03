@@ -7,6 +7,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Query, Ba
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import os
 from typing import List, Optional
 
@@ -15,7 +16,7 @@ from models import Repository, Category
 from schemas import RepositorySchema, RepositoryCreate, BulkActionRequest, ImportResponse
 from services.bookmark_parser import parse_html_bookmarks, filter_github_urls, categorize_url
 from services.git_service import clone_repo, sync_repo, get_repo_info
-from services.docker_service import deploy_to_docker
+# from services.docker_service import deploy_to_docker
 from crud import repository as repo_crud
 
 
@@ -270,7 +271,7 @@ async def deploy_repository(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
     
-    background_tasks.add_task(deploy_to_docker, repo.path, repo.name)
+    # background_tasks.add_task(deploy_to_docker, repo.path, repo.name)
     return {"message": f"Deploying {repo.name} to Docker..."}
 
 
@@ -280,7 +281,7 @@ async def deploy_repository(
 async def health_check(db: Session = Depends(get_db)):
     """Health check endpoint"""
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         return {"status": "healthy", "database": "connected"}
     except:
         return {"status": "unhealthy", "database": "disconnected"}

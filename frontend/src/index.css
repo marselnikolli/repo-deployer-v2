@@ -1,3 +1,42 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "./styles/theme.css";
+
+@plugin "tailwindcss-animate";
+@plugin "tailwindcss-react-aria-components";
+
+/* Custom dark mode variant */
+@custom-variant dark (&:where(.dark-mode, .dark-mode *));
+
+/* Custom utilities */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .transition-inherit {
+    transition: inherit;
+  }
+}
+
+/* Base styles */
+@layer base {
+  html {
+    font-family: var(--font-family-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-bg-secondary);
+    color: var(--color-fg-primary);
+  }
+
+  * {
+    border-color: var(--color-border-secondary);
+  }
+}
