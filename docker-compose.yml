@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: repo-deployer-db
+    environment:
+      POSTGRES_DB: repo_deployer
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - repo-deployer-network
+
+  # FastAPI Backend
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: repo-deployer-api
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/repo_deployer
+      MIRROR_DIR: /app/mirrors
+      LOG_LEVEL: INFO
+    volumes:
+      - ./backend:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - mirrors:/app/mirrors
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - repo-deployer-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: repo-deployer-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - repo-deployer-network
+    environment:
+      REACT_APP_API_URL: http://api:8000
+
+volumes:
+  postgres_data:
+    driver: local
+  mirrors:
+    driver: local
+
+networks:
+  repo-deployer-network:
+    driver: bridge
