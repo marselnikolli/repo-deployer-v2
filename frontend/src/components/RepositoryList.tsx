@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import {
   CheckCircle,
-  Server01,
-  LinkExternal02,
-  Trash01,
+  Server,
+  ExternalLink,
+  Trash2,
   ChevronLeft,
   ChevronRight,
   Folder,
-} from '@untitledui/icons'
+} from 'lucide-react'
 import { useRepositoryStore } from '@/store/useRepositoryStore'
 import { repositoryApi, bulkApi, generalApi } from '@/api/client'
 import { cx } from '@/utils/cx'

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Tabs, TabList, Tab, TabPanel } from 'react-aria-components'
 import { useNavigate } from 'react-router-dom'
-import { BarChart03, Download01, Package, Search01, LogOut } from '@untitledui/icons'
+import { BarChart3, Download, Package, Search, LogOut } from 'lucide-react'
 import { Dashboard } from '@/components/Dashboard'
 import { ImportBookmarks } from '@/components/ImportBookmarks'
 import { RepositoryList } from '@/components/RepositoryList'
@@ -73,7 +73,7 @@ export function HomePage() {
                   )
                 }
               >
-                <BarChart03 className="size-5" />
+                <BarChart3 className="size-5" />
                 Dashboard
               </Tab>
               <Tab

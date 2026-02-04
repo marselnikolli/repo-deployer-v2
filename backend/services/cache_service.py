@@ -2,9 +2,17 @@ import json
 from typing import Optional, Any
 import redis
 import os
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder for datetime objects"""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 class CacheService:
     """Redis caching service for search results and statistics"""
@@ -33,7 +41,7 @@ class CacheService:
             if not client:
                 return False
             
-            serialized = json.dumps(value)
+            serialized = json.dumps(value, cls=DateTimeEncoder)
             client.setex(key, ttl, serialized)
             return True
         except Exception as e:

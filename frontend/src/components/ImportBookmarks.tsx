@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Upload01, AlertCircle, CheckCircle, X, File06 } from '@untitledui/icons'
+import { Upload, AlertCircle, CheckCircle, X, File } from 'lucide-react'
 import { importApi } from '@/api/client'
 import { cx } from '@/utils/cx'
 import toast from 'react-hot-toast'

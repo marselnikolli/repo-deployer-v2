@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Package, CheckCircle, Server01 } from '@untitledui/icons'
+import { Package, CheckCircle, Server } from 'lucide-react'
 import { generalApi } from '@/api/client'
 import { cx } from '@/utils/cx'
 import Analytics from './Analytics'
