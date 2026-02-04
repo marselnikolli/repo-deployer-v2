@@ -161,6 +161,22 @@ async def list_repositories(
     return repos
 
 
+@app.post("/api/repositories", response_model=RepositorySchema)
+async def create_repository(
+    repo_data: RepositoryCreate,
+    db: Session = Depends(get_db)
+):
+    """Manually add a new repository"""
+    # Check if repository already exists
+    existing = repo_crud.get_repo_by_url(db, repo_data.url)
+    if existing:
+        raise HTTPException(status_code=400, detail="Repository with this URL already exists")
+    
+    # Create the repository
+    new_repo = repo_crud.create_repository(db, repo_data)
+    return new_repo
+
+
 @app.get("/api/search")
 async def search_repositories(
     q: Optional[str] = Query(None, description="Search query"),

@@ -17,6 +17,9 @@ export const repositoryApi = {
   get: (id: number) =>
     api.get(`/repositories/${id}`),
   
+  create: (data: any) =>
+    api.post(`/repositories`, data),
+  
   update: (id: number, data: any) =>
     api.put(`/repositories/${id}`, data),
   

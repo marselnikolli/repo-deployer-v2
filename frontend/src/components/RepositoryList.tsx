@@ -13,6 +13,26 @@ import { repositoryApi, bulkApi, generalApi } from '@/api/client'
 import { cx } from '@/utils/cx'
 import toast from 'react-hot-toast'
 
+// Utility to clean URLs by removing tracking parameters
+const cleanUrl = (url: string | undefined) => {
+  if (!url) return ''
+  try {
+    const urlObj = new URL(url)
+    // Remove common tracking parameters
+    const paramsToRemove = ['fbclid', 'gclid', 'msclkid', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
+    
+    // Also remove parameters that start with 'aem_'
+    const keysToDelete = Array.from(urlObj.searchParams.keys()).filter(
+      key => paramsToRemove.includes(key) || key.startsWith('aem_')
+    )
+    
+    keysToDelete.forEach(key => urlObj.searchParams.delete(key))
+    return urlObj.toString()
+  } catch {
+    return url
+  }
+}
+
 interface Repository {
   id: number
   name: string
@@ -40,21 +60,33 @@ export function RepositoryList() {
   const [categories, setCategories] = useState<string[]>([])
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [filterCategory, setFilterCategory] = useState<string | null>(null)
 
   useEffect(() => {
     fetchRepositories()
     fetchCategories()
-  }, [currentPage])
+  }, [currentPage, filterCategory])
 
   const fetchRepositories = async () => {
     try {
       setLoading(true)
       const skip = (currentPage - 1) * pageSize
       const response = await repositoryApi.list(undefined, skip, pageSize)
-      setRepositories(response.data)
+      let filtered = response.data
+      
+      // Apply category filter if selected
+      if (filterCategory) {
+        filtered = filtered.filter(r => r.category === filterCategory)
+      }
+      
+      setRepositories(filtered)
       // For total count, fetch all (or use a separate endpoint)
       const allResponse = await repositoryApi.list(undefined, 0, 10000)
-      setTotalCount(allResponse.data.length)
+      let totalFiltered = allResponse.data
+      if (filterCategory) {
+        totalFiltered = totalFiltered.filter(r => r.category === filterCategory)
+      }
+      setTotalCount(totalFiltered.length)
     } catch {
       toast.error('Failed to fetch repositories')
     } finally {
@@ -110,6 +142,27 @@ export function RepositoryList() {
     }
   }
 
+  const handleDeleteAll = async () => {
+    if (totalCount === 0) return
+
+    if (!confirm(`Are you sure you want to delete ALL ${totalCount} repositories? This cannot be undone.`)) return
+    if (!confirm('This will permanently delete all repositories. Please confirm again.')) return
+
+    try {
+      setLoading(true)
+      const allIds = repositories.map(r => r.id)
+      await bulkApi.delete(allIds)
+      toast.success(`Deleted all ${totalCount} repositories`)
+      clearSelection()
+      setFilterCategory(null)
+      fetchRepositories()
+    } catch {
+      toast.error('Failed to delete all repositories')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const totalPages = Math.ceil(totalCount / pageSize)
 
   if (loading && repositories.length === 0) {
@@ -131,6 +184,51 @@ export function RepositoryList() {
         </span>
       </div>
 
+      {/* Filter and Actions Row */}
+      <div className="flex items-center gap-3 justify-between flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">
+            Filter by category:
+          </label>
+          <select
+            value={filterCategory || ''}
+            onChange={(e) => {
+              setFilterCategory(e.target.value || null)
+              setCurrentPage(1)
+            }}
+            className="px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 hover:border-[var(--color-brand-300)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)]"
+          >
+            <option value="" className="text-gray-900">All Categories</option>
+            {categories.map((cat) => (
+              <option key={cat} value={cat} className="text-gray-900">
+                {cat}
+              </option>
+            ))}
+          </select>
+          {filterCategory && (
+            <button
+              onClick={() => {
+                setFilterCategory(null)
+                setCurrentPage(1)
+              }}
+              className="px-3 py-2 text-[length:var(--text-sm)] font-medium text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        {totalCount > 0 && (
+          <button
+            onClick={handleDeleteAll}
+            disabled={loading}
+            className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 border border-red-700 rounded-[var(--radius-md)] transition-colors flex items-center gap-2"
+          >
+            <Trash2 className="size-4" />
+            Delete All
+          </button>
+        )}
+      </div>
+
       {/* Bulk Actions Bar */}
       {selectedIds.size > 0 && (
         <div className="bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] rounded-[var(--radius-lg)] p-3 flex items-center justify-between">
@@ -149,7 +247,7 @@ export function RepositoryList() {
               onClick={handleBulkDelete}
               className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-error-700)] bg-white border border-[var(--color-error-300)] rounded-[var(--radius-md)] hover:bg-[var(--color-error-50)] transition-colors"
             >
-              <Trash01 className="size-4 inline mr-1" />
+              <Trash2 className="size-4 inline mr-1" />
               Delete
             </button>
             <button
@@ -230,9 +328,10 @@ export function RepositoryList() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-[length:var(--text-sm)] text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] max-w-xs truncate"
+                        title={repo?.url || 'No URL'}
                       >
-                        <LinkExternal02 className="size-4 flex-shrink-0" />
-                        <span className="truncate">{repo?.url || 'No URL'}</span>
+                        <ExternalLink className="size-4 flex-shrink-0" />
+                        <span className="truncate">{cleanUrl(repo?.url) || 'No URL'}</span>
                       </a>
                     </td>
                     <td className="px-4 py-3">
@@ -248,7 +347,7 @@ export function RepositoryList() {
                         )}
                         {repo?.deployed && (
                           <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded-[var(--radius-md)]">
-                            <Server01 className="size-3" />
+                            <Server className="size-3" />
                             Deployed
                           </span>
                         )}

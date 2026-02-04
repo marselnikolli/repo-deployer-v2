@@ -149,7 +149,7 @@ export function ImportBookmarks() {
 
               <div className="flex justify-center mb-4">
                 <div className="w-12 h-12 rounded-[var(--radius-lg)] bg-[var(--color-brand-50)] flex items-center justify-center">
-                  <Upload01 className="size-6 text-[var(--color-brand-600)]" />
+                  <Upload className="size-6 text-[var(--color-brand-600)]" />
                 </div>
               </div>
 

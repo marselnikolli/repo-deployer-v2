@@ -3,6 +3,29 @@
 from html.parser import HTMLParser
 from typing import List, Dict
 import re
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+
+def clean_url(url: str) -> str:
+    """Remove tracking parameters from URLs"""
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        
+        # Remove tracking parameters
+        tracking_params = ['fbclid', 'gclid', 'msclkid', 'utm_source', 'utm_medium', 
+                          'utm_campaign', 'utm_content', 'utm_term']
+        
+        # Remove parameters starting with 'aem_'
+        filtered_params = {k: v for k, v in params.items() 
+                          if k not in tracking_params and not k.startswith('aem_')}
+        
+        # Rebuild URL
+        new_query = urlencode(filtered_params, doseq=True)
+        new_parsed = parsed._replace(query=new_query)
+        return urlunparse(new_parsed)
+    except Exception:
+        return url
 
 
 class BookmarkParser(HTMLParser):
@@ -50,11 +73,16 @@ def parse_html_bookmarks(html_content: str) -> List[Dict[str, str]]:
 
 
 def filter_github_urls(bookmarks: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Filter bookmarks to only GitHub URLs"""
+    """Filter bookmarks to only GitHub URLs and clean them"""
     github_bookmarks = []
     for bookmark in bookmarks:
         if 'github.com' in bookmark['url'].lower():
-            github_bookmarks.append(bookmark)
+            # Clean the URL to remove tracking parameters
+            cleaned_url = clean_url(bookmark['url'])
+            github_bookmarks.append({
+                'url': cleaned_url,
+                'title': bookmark['title']
+            })
     return github_bookmarks
 
 

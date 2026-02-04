@@ -18,6 +18,11 @@ def get_repo_by_name(db: Session, name: str) -> Optional[Repository]:
     return db.query(Repository).filter(Repository.name == name).first()
 
 
+def get_repo_by_url(db: Session, url: str) -> Optional[Repository]:
+    """Get repository by URL"""
+    return db.query(Repository).filter(Repository.url == url).first()
+
+
 def get_repositories(
     db: Session,
     category: Optional[str] = None,

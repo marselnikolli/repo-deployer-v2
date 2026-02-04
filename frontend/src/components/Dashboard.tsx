@@ -82,7 +82,7 @@ export function Dashboard() {
         <StatCard
           title="Deployed"
           value={stats.total_deployed}
-          icon={<Server01 className="size-6" />}
+          icon={<Server className="size-6" />}
           variant="purple"
         />
       </div>
