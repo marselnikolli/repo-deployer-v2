@@ -198,55 +198,55 @@ export function RepositoryList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border-secondary)]">
-                {repositories.map((repo: Repository) => (
+                {repositories?.filter(repo => repo != null).map((repo: Repository) => (
                   <tr
-                    key={repo.id}
+                    key={repo?.id || Math.random()}
                     className={cx(
                       'hover:bg-[var(--color-bg-secondary)] transition-colors',
-                      selectedIds.has(repo.id) && 'bg-[var(--color-brand-25)]'
+                      selectedIds.has(repo?.id) && 'bg-[var(--color-brand-25)]'
                     )}
                   >
                     <td className="px-4 py-3">
                       <input
                         type="checkbox"
-                        checked={selectedIds.has(repo.id)}
-                        onChange={() => toggleSelection(repo.id)}
+                        checked={repo?.id ? selectedIds.has(repo.id) : false}
+                        onChange={() => repo?.id && toggleSelection(repo.id)}
                         className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
                       />
                     </td>
                     <td className="px-4 py-3">
                       <div>
                         <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">
-                          {repo.name}
+                          {repo?.name || 'Unknown'}
                         </p>
                         <p className="text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] truncate max-w-xs">
-                          {repo.title}
+                          {repo?.title || 'No title'}
                         </p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <a
-                        href={repo.url}
+                        href={repo?.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-[length:var(--text-sm)] text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] max-w-xs truncate"
                       >
                         <LinkExternal02 className="size-4 flex-shrink-0" />
-                        <span className="truncate">{repo.url}</span>
+                        <span className="truncate">{repo?.url || 'No URL'}</span>
                       </a>
                     </td>
                     <td className="px-4 py-3">
-                      <CategoryBadge category={repo.category} />
+                      <CategoryBadge category={repo?.category || 'uncategorized'} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {repo.cloned && (
+                        {repo?.cloned && (
                           <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
                             <CheckCircle className="size-3" />
                             Cloned
                           </span>
                         )}
-                        {repo.deployed && (
+                        {repo?.deployed && (
                           <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded-[var(--radius-md)]">
                             <Server01 className="size-3" />
                             Deployed

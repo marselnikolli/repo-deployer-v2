@@ -1,15 +1,25 @@
 import { useState } from 'react'
 import { Tabs, TabList, Tab, TabPanel } from 'react-aria-components'
-import { BarChart03, Download01, Package } from '@untitledui/icons'
+import { useNavigate } from 'react-router-dom'
+import { BarChart03, Download01, Package, Search01, LogOut } from '@untitledui/icons'
 import { Dashboard } from '@/components/Dashboard'
 import { ImportBookmarks } from '@/components/ImportBookmarks'
 import { RepositoryList } from '@/components/RepositoryList'
+import SearchPage from '@/pages/SearchPage'
 import { useTheme } from '@/providers/theme-provider'
+import { useAuth } from '@/contexts/AuthContext'
 import { cx } from '@/utils/cx'
 
 export function HomePage() {
   const [selectedTab, setSelectedTab] = useState<string>('dashboard')
   const { theme, toggleTheme } = useTheme()
+  const { username, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-secondary)]">
@@ -24,13 +34,26 @@ export function HomePage() {
                 Professional repository management and deployment
               </p>
             </div>
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-[var(--radius-md)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-              aria-label="Toggle theme"
-            >
-              {theme === 'light' ? '🌙' : '☀️'}
-            </button>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-[var(--color-fg-secondary)]">
+                Welcome, <span className="font-medium">{username}</span>
+              </span>
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-[var(--radius-md)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                aria-label="Toggle theme"
+              >
+                {theme === 'light' ? '🌙' : '☀️'}
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius-md)] bg-red-50 text-red-700 hover:bg-red-100 transition-colors text-sm font-medium"
+                aria-label="Logout"
+              >
+                <LogOut className="size-4" />
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -81,6 +104,20 @@ export function HomePage() {
                 <Package className="size-5" />
                 Repositories
               </Tab>
+              <Tab
+                id="search"
+                className={({ isSelected }) =>
+                  cx(
+                    'flex items-center gap-2 px-1 py-4 text-[length:var(--text-sm)] font-medium border-b-2 transition-colors outline-none cursor-pointer',
+                    isSelected
+                      ? 'border-[var(--color-brand-500)] text-[var(--color-brand-600)]'
+                      : 'border-transparent text-[var(--color-fg-quaternary)] hover:text-[var(--color-fg-secondary)] hover:border-[var(--color-border-primary)]'
+                  )
+                }
+              >
+                <Search01 className="size-5" />
+                Search
+              </Tab>
             </TabList>
           </div>
         </nav>
@@ -94,6 +131,11 @@ export function HomePage() {
           </TabPanel>
           <TabPanel id="repositories">
             <RepositoryList />
+          </TabPanel>
+          <TabPanel id="search">
+            <div className="max-w-4xl -mx-4 sm:-mx-6 lg:-mx-8">
+              <SearchPage />
+            </div>
           </TabPanel>
         </main>
       </Tabs>

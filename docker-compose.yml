@@ -21,6 +21,21 @@ services:
     networks:
       - repo-deployer-network
 
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: repo-deployer-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - repo-deployer-network
+    command: redis-server --appendonly yes
+
   # FastAPI Backend
   api:
     build:
@@ -29,6 +44,7 @@ services:
     container_name: repo-deployer-api
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/repo_deployer
+      REDIS_URL: redis://redis:6379/0
       MIRROR_DIR: /app/mirrors
       LOG_LEVEL: INFO
     volumes:
@@ -39,6 +55,8 @@ services:
       - "8000:8000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - repo-deployer-network

@@ -3,13 +3,15 @@ FastAPI Backend for GitHub Repo Deployer
 RESTful API for managing GitHub repository imports and deployments
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Query, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Query, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import os
 from typing import List, Optional
+from pydantic import BaseModel
+from datetime import timedelta
 
 from database import engine, SessionLocal, init_db
 from models import Repository, Category
@@ -33,7 +35,10 @@ app = FastAPI(
     title="GitHub Repo Deployer API",
     description="Professional API for managing and deploying GitHub repositories",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    redoc_url="/api/redoc",
 )
 
 # CORS Configuration
@@ -154,6 +159,63 @@ async def list_repositories(
     """List all repositories with optional filtering and pagination"""
     repos = repo_crud.get_repositories(db, category=category, skip=skip, limit=limit)
     return repos
+
+
+@app.get("/api/search")
+async def search_repositories(
+    q: Optional[str] = Query(None, description="Search query"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    cloned: Optional[bool] = Query(None, description="Filter by cloned status"),
+    deployed: Optional[bool] = Query(None, description="Filter by deployed status"),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    """Search repositories with full-text search and filters"""
+    from services.search_service import SearchService
+    from services.cache_service import CacheService, generate_search_cache_key
+    
+    # Generate cache key
+    cache_key = generate_search_cache_key(q, category, cloned, deployed, limit, offset)
+    
+    # Try to get from cache
+    cached_result = CacheService.get(cache_key)
+    if cached_result:
+        return cached_result
+    
+    results, total = SearchService.search_repositories(
+        db=db,
+        query=q or "",
+        category=category,
+        cloned=cloned,
+        deployed=deployed,
+        limit=limit,
+        offset=offset,
+    )
+    
+    response = {
+        "results": [
+            {
+                "id": r.id,
+                "name": r.name,
+                "title": r.title,
+                "url": r.url,
+                "category": r.category,
+                "cloned": r.cloned,
+                "deployed": r.deployed,
+                "created_at": r.created_at,
+            }
+            for r in results
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+    
+    # Cache the result (1 hour TTL)
+    CacheService.set(cache_key, response, ttl=3600)
+    
+    return response
 
 
 @app.get("/api/repositories/{repo_id}", response_model=RepositorySchema)
@@ -290,8 +352,106 @@ async def health_check(db: Session = Depends(get_db)):
 @app.get("/api/stats")
 async def get_stats(db: Session = Depends(get_db)):
     """Get application statistics"""
+    from services.cache_service import CacheService, generate_stats_cache_key
+    
+    # Try to get from cache
+    cache_key = generate_stats_cache_key()
+    cached_stats = CacheService.get(cache_key)
+    if cached_stats:
+        return cached_stats
+    
     stats = repo_crud.get_stats(db)
+    
+    # Cache the result (5 minute TTL)
+    CacheService.set(cache_key, stats, ttl=300)
+    
     return stats
+
+
+@app.get("/api/audit-logs")
+async def get_audit_logs(
+    operation: Optional[str] = Query(None, description="Filter by operation type"),
+    resource_type: Optional[str] = Query(None, description="Filter by resource type"),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    """Get audit logs with optional filtering"""
+    from services.audit_service import AuditService
+    logs = AuditService.get_audit_logs(
+        db=db,
+        operation=operation,
+        resource_type=resource_type,
+        limit=limit,
+        offset=offset,
+    )
+    return [
+        {
+            "id": log.id,
+            "operation": log.operation,
+            "resource_type": log.resource_type,
+            "resource_id": log.resource_id,
+            "status": log.status,
+            "timestamp": log.timestamp.isoformat(),
+            "details": log.details,
+            "error_message": log.error_message,
+        }
+        for log in logs
+    ]
+
+
+# ============ AUTHENTICATION ENDPOINTS ============
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+async def login(request: LoginRequest):
+    """Authenticate user and return JWT token"""
+    from services.auth_service import verify_password, create_access_token
+    
+    # In a real app, verify username against database
+    # For now, accept any username/password that matches a pattern
+    if not request.username or not request.password:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Create token with 30 minute expiration
+    access_token = create_access_token(
+        data={"sub": request.username},
+        expires_delta=timedelta(minutes=30)
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/api/auth/verify")
+async def verify_token(authorization: Optional[str] = Header(None)):
+    """Verify JWT token validity"""
+    from services.auth_service import decode_token
+    
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+    
+    # Extract token from "Bearer <token>"
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+    
+    token = parts[1]
+    username = decode_token(token)
+    
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return {"username": username, "valid": True}
 
 
 if __name__ == "__main__":

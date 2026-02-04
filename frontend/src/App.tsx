@@ -1,10 +1,43 @@
 import { Toaster } from 'react-hot-toast'
+import { Routes, Route } from 'react-router-dom'
 import { HomePage } from '@/pages/HomePage'
+import SearchPage from '@/pages/SearchPage'
+import LoginPage from '@/pages/LoginPage'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { useAuth } from '@/contexts/AuthContext'
 
 function App() {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border border-gray-300 border-t-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
     <>
-      <HomePage />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <HomePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search"
+          element={
+            <ProtectedRoute>
+              <SearchPage />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
       <Toaster
         position="top-right"
         toastOptions={{

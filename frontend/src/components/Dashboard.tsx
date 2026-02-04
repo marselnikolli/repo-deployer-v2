@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Package, CheckCircle, Server01 } from '@untitledui/icons'
 import { generalApi } from '@/api/client'
 import { cx } from '@/utils/cx'
+import Analytics from './Analytics'
 
 interface Stats {
   total_repositories: number
@@ -13,6 +14,7 @@ interface Stats {
 export function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [useNewAnalytics, setUseNewAnalytics] = useState(true)
 
   useEffect(() => {
     fetchStats()
@@ -29,7 +31,28 @@ export function Dashboard() {
     }
   }
 
-  if (loading || !stats) {
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-brand-500)] border-t-transparent"></div>
+      </div>
+    )
+  }
+
+  // Use new Analytics component if available
+  if (useNewAnalytics) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-[length:var(--text-display-xs)] font-semibold text-[var(--color-fg-primary)]">
+          Dashboard
+        </h2>
+        <Analytics />
+      </div>
+    )
+  }
+
+  // Fallback to old dashboard
+  if (!stats) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-brand-500)] border-t-transparent"></div>
