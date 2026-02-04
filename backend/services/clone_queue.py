@@ -1,0 +1,205 @@
+"""Clone queue service for batch repository cloning"""
+
+import asyncio
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Optional, Dict, Callable
+from enum import Enum
+import threading
+from queue import Queue
+import os
+
+
+class CloneStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class CloneJob:
+    """Represents a single clone job"""
+    id: int
+    repository_id: int
+    repository_name: str
+    repository_url: str
+    target_path: str
+    status: CloneStatus = CloneStatus.PENDING
+    progress: int = 0
+    error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+
+class CloneQueueService:
+    """Service for managing batch clone operations"""
+
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+
+        self.jobs: Dict[int, CloneJob] = {}
+        self.queue: Queue = Queue()
+        self.job_counter = 0
+        self.max_concurrent = 3
+        self.active_jobs = 0
+        self.is_running = False
+        self.worker_thread: Optional[threading.Thread] = None
+        self.on_job_update: Optional[Callable[[CloneJob], None]] = None
+        self._initialized = True
+
+    def start(self):
+        """Start the clone queue worker"""
+        if self.is_running:
+            return
+
+        self.is_running = True
+        self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self.worker_thread.start()
+
+    def stop(self):
+        """Stop the clone queue worker"""
+        self.is_running = False
+        if self.worker_thread:
+            self.worker_thread.join(timeout=5)
+
+    def add_job(self, repository_id: int, name: str, url: str, target_path: str) -> CloneJob:
+        """Add a new clone job to the queue"""
+        self.job_counter += 1
+        job = CloneJob(
+            id=self.job_counter,
+            repository_id=repository_id,
+            repository_name=name,
+            repository_url=url,
+            target_path=target_path
+        )
+        self.jobs[job.id] = job
+        self.queue.put(job.id)
+        return job
+
+    def add_jobs(self, repositories: List[Dict]) -> List[CloneJob]:
+        """Add multiple clone jobs to the queue"""
+        jobs = []
+        for repo in repositories:
+            job = self.add_job(
+                repository_id=repo['id'],
+                name=repo['name'],
+                url=repo['url'],
+                target_path=repo.get('path', f"./repos/{repo['name']}")
+            )
+            jobs.append(job)
+        return jobs
+
+    def get_job(self, job_id: int) -> Optional[CloneJob]:
+        """Get a specific job by ID"""
+        return self.jobs.get(job_id)
+
+    def get_all_jobs(self) -> List[CloneJob]:
+        """Get all jobs"""
+        return list(self.jobs.values())
+
+    def get_queue_status(self) -> Dict:
+        """Get overall queue status"""
+        jobs = self.get_all_jobs()
+        return {
+            "total": len(jobs),
+            "pending": len([j for j in jobs if j.status == CloneStatus.PENDING]),
+            "in_progress": len([j for j in jobs if j.status == CloneStatus.IN_PROGRESS]),
+            "completed": len([j for j in jobs if j.status == CloneStatus.COMPLETED]),
+            "failed": len([j for j in jobs if j.status == CloneStatus.FAILED]),
+            "is_running": self.is_running,
+            "active_jobs": self.active_jobs
+        }
+
+    def cancel_job(self, job_id: int) -> bool:
+        """Cancel a pending job"""
+        job = self.jobs.get(job_id)
+        if job and job.status == CloneStatus.PENDING:
+            job.status = CloneStatus.CANCELLED
+            return True
+        return False
+
+    def clear_completed(self):
+        """Clear completed and failed jobs from the list"""
+        to_remove = [
+            job_id for job_id, job in self.jobs.items()
+            if job.status in [CloneStatus.COMPLETED, CloneStatus.FAILED, CloneStatus.CANCELLED]
+        ]
+        for job_id in to_remove:
+            del self.jobs[job_id]
+
+    def _worker_loop(self):
+        """Main worker loop that processes clone jobs"""
+        from services.git_service import clone_repo
+
+        while self.is_running:
+            try:
+                # Check if we can process more jobs
+                if self.active_jobs >= self.max_concurrent:
+                    asyncio.sleep(0.5)
+                    continue
+
+                # Get next job from queue (non-blocking)
+                try:
+                    job_id = self.queue.get(timeout=1)
+                except:
+                    continue
+
+                job = self.jobs.get(job_id)
+                if not job or job.status == CloneStatus.CANCELLED:
+                    continue
+
+                # Start processing the job
+                self.active_jobs += 1
+                job.status = CloneStatus.IN_PROGRESS
+                job.started_at = datetime.utcnow()
+
+                if self.on_job_update:
+                    self.on_job_update(job)
+
+                try:
+                    # Ensure target directory exists
+                    os.makedirs(os.path.dirname(job.target_path), exist_ok=True)
+
+                    # Clone the repository
+                    success = clone_repo(job.repository_url, job.target_path)
+
+                    if success:
+                        job.status = CloneStatus.COMPLETED
+                        job.progress = 100
+                    else:
+                        job.status = CloneStatus.FAILED
+                        job.error_message = "Clone operation failed"
+
+                except Exception as e:
+                    job.status = CloneStatus.FAILED
+                    job.error_message = str(e)
+
+                finally:
+                    job.completed_at = datetime.utcnow()
+                    self.active_jobs -= 1
+
+                    if self.on_job_update:
+                        self.on_job_update(job)
+
+            except Exception as e:
+                print(f"Clone queue worker error: {e}")
+                continue
+
+
+# Singleton instance
+clone_queue = CloneQueueService()

@@ -15,7 +15,7 @@ from datetime import timedelta
 
 from database import engine, SessionLocal, init_db
 from models import Repository, Category
-from schemas import RepositorySchema, RepositoryCreate, BulkActionRequest, ImportResponse
+from schemas import RepositorySchema, RepositoryCreate, RepositoryUpdate, BulkActionRequest, ImportResponse
 from services.bookmark_parser import parse_html_bookmarks, filter_github_urls, categorize_url
 from services.git_service import clone_repo, sync_repo, get_repo_info
 # from services.docker_service import deploy_to_docker
@@ -154,11 +154,37 @@ async def list_repositories(
     category: Optional[str] = Query(None),
     skip: int = Query(0),
     limit: int = Query(100),
+    sort_by: Optional[str] = Query(None, description="Sort by field: name, category, created_at, updated_at"),
+    sort_order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
     db: Session = Depends(get_db)
 ):
-    """List all repositories with optional filtering and pagination"""
-    repos = repo_crud.get_repositories(db, category=category, skip=skip, limit=limit)
+    """List all repositories with optional filtering, sorting, and pagination"""
+    repos = repo_crud.get_repositories(
+        db,
+        category=category,
+        skip=skip,
+        limit=limit,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
     return repos
+
+
+@app.get("/api/repositories/check-duplicate")
+async def check_duplicate_url(
+    url: str = Query(..., description="URL to check"),
+    db: Session = Depends(get_db)
+):
+    """Check if a repository URL already exists"""
+    existing = repo_crud.get_repo_by_url(db, url)
+    return {
+        "exists": existing is not None,
+        "repository": {
+            "id": existing.id,
+            "name": existing.name,
+            "url": existing.url
+        } if existing else None
+    }
 
 
 @app.post("/api/repositories", response_model=RepositorySchema)
@@ -246,10 +272,10 @@ async def get_repository(repo_id: int, db: Session = Depends(get_db)):
 @app.put("/api/repositories/{repo_id}", response_model=RepositorySchema)
 async def update_repository(
     repo_id: int,
-    repo_data: RepositorySchema,
+    repo_data: RepositoryUpdate,
     db: Session = Depends(get_db)
 ):
-    """Update repository metadata"""
+    """Update repository metadata (supports partial updates)"""
     repo = repo_crud.update_repository(db, repo_id, repo_data)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
@@ -416,6 +442,66 @@ async def get_audit_logs(
     ]
 
 
+# ============ EXPORT ENDPOINTS ============
+
+
+@app.get("/api/export/csv")
+async def export_csv(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    db: Session = Depends(get_db)
+):
+    """Export repositories to CSV format"""
+    from fastapi.responses import Response
+    from services.export_service import ExportService
+
+    repos = repo_crud.get_repositories(db, category=category, skip=0, limit=100000)
+    csv_content = ExportService.to_csv(repos)
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=repositories.csv"}
+    )
+
+
+@app.get("/api/export/json")
+async def export_json(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    db: Session = Depends(get_db)
+):
+    """Export repositories to JSON format"""
+    from fastapi.responses import Response
+    from services.export_service import ExportService
+
+    repos = repo_crud.get_repositories(db, category=category, skip=0, limit=100000)
+    json_content = ExportService.to_json(repos)
+
+    return Response(
+        content=json_content,
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=repositories.json"}
+    )
+
+
+@app.get("/api/export/markdown")
+async def export_markdown(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    db: Session = Depends(get_db)
+):
+    """Export repositories to Markdown format"""
+    from fastapi.responses import Response
+    from services.export_service import ExportService
+
+    repos = repo_crud.get_repositories(db, category=category, skip=0, limit=100000)
+    md_content = ExportService.to_markdown(repos)
+
+    return Response(
+        content=md_content,
+        media_type="text/markdown",
+        headers={"Content-Disposition": "attachment; filename=repositories.md"}
+    )
+
+
 # ============ AUTHENTICATION ENDPOINTS ============
 
 
@@ -468,6 +554,295 @@ async def verify_token(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     return {"username": username, "valid": True}
+
+
+# ============ GITHUB METADATA ENDPOINTS ============
+
+
+@app.get("/api/github/metadata")
+async def fetch_github_metadata(url: str = Query(..., description="GitHub repository URL")):
+    """Fetch metadata from GitHub API for a repository URL"""
+    from services.github_service import GitHubService
+
+    metadata = await GitHubService.fetch_repo_metadata(url)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Could not fetch metadata. Repository may not exist or is private.")
+
+    suggested_category = GitHubService.suggest_category_from_metadata(metadata)
+
+    return {
+        "stars": metadata.stars,
+        "forks": metadata.forks,
+        "watchers": metadata.watchers,
+        "language": metadata.language,
+        "languages": metadata.languages,
+        "topics": metadata.topics,
+        "description": metadata.description,
+        "license": metadata.license,
+        "archived": metadata.archived,
+        "is_fork": metadata.is_fork,
+        "created_at": metadata.created_at,
+        "updated_at": metadata.updated_at,
+        "pushed_at": metadata.pushed_at,
+        "open_issues": metadata.open_issues,
+        "default_branch": metadata.default_branch,
+        "suggested_category": suggested_category
+    }
+
+
+@app.post("/api/repositories/{repo_id}/sync-metadata")
+async def sync_repository_metadata(
+    repo_id: int,
+    db: Session = Depends(get_db)
+):
+    """Sync GitHub metadata for a repository"""
+    from services.github_service import GitHubService
+    from datetime import datetime
+
+    repo = repo_crud.get_repository(db, repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    metadata = await GitHubService.fetch_repo_metadata(repo.url)
+    if not metadata:
+        return {"message": "Could not fetch metadata", "success": False}
+
+    # Update repository with metadata
+    repo.stars = metadata.stars
+    repo.forks = metadata.forks
+    repo.watchers = metadata.watchers
+    repo.language = metadata.language
+    repo.languages = metadata.languages
+    repo.topics = metadata.topics
+    repo.license = metadata.license
+    repo.archived = metadata.archived
+    repo.is_fork = metadata.is_fork
+    repo.open_issues = metadata.open_issues
+    repo.default_branch = metadata.default_branch
+    repo.last_metadata_sync = datetime.utcnow()
+
+    # Update health status based on archived flag
+    repo.health_status = "archived" if metadata.archived else "healthy"
+    repo.last_health_check = datetime.utcnow()
+
+    # Parse GitHub dates
+    if metadata.created_at:
+        try:
+            repo.github_created_at = datetime.fromisoformat(metadata.created_at.replace('Z', '+00:00'))
+        except:
+            pass
+    if metadata.updated_at:
+        try:
+            repo.github_updated_at = datetime.fromisoformat(metadata.updated_at.replace('Z', '+00:00'))
+        except:
+            pass
+    if metadata.pushed_at:
+        try:
+            repo.github_pushed_at = datetime.fromisoformat(metadata.pushed_at.replace('Z', '+00:00'))
+        except:
+            pass
+
+    db.commit()
+    db.refresh(repo)
+
+    return {"message": f"Metadata synced for {repo.name}", "success": True, "repository": repo}
+
+
+# ============ TAGS ENDPOINTS ============
+
+
+from crud import tags as tags_crud
+from schemas import TagCreate, TagSchema
+
+
+@app.get("/api/tags")
+async def list_tags(db: Session = Depends(get_db)):
+    """List all tags with repository counts"""
+    return tags_crud.get_tags_with_counts(db)
+
+
+@app.post("/api/tags", response_model=TagSchema)
+async def create_tag(tag: TagCreate, db: Session = Depends(get_db)):
+    """Create a new tag"""
+    existing = tags_crud.get_tag_by_name(db, tag.name)
+    if existing:
+        raise HTTPException(status_code=400, detail="Tag already exists")
+    return tags_crud.create_tag(db, tag)
+
+
+@app.delete("/api/tags/{tag_id}")
+async def delete_tag(tag_id: int, db: Session = Depends(get_db)):
+    """Delete a tag"""
+    success = tags_crud.delete_tag(db, tag_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return {"message": "Tag deleted"}
+
+
+@app.post("/api/repositories/{repo_id}/tags")
+async def add_tags_to_repo(
+    repo_id: int,
+    tag_ids: List[int],
+    db: Session = Depends(get_db)
+):
+    """Add tags to a repository"""
+    repo = tags_crud.add_tags_to_repository(db, repo_id, tag_ids)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return {"message": f"Added {len(tag_ids)} tags to repository"}
+
+
+@app.delete("/api/repositories/{repo_id}/tags")
+async def remove_tags_from_repo(
+    repo_id: int,
+    tag_ids: List[int],
+    db: Session = Depends(get_db)
+):
+    """Remove tags from a repository"""
+    repo = tags_crud.remove_tags_from_repository(db, repo_id, tag_ids)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return {"message": f"Removed {len(tag_ids)} tags from repository"}
+
+
+@app.post("/api/bulk/add-tags")
+async def bulk_add_tags(
+    repo_ids: List[int],
+    tag_ids: List[int],
+    db: Session = Depends(get_db)
+):
+    """Add tags to multiple repositories"""
+    updated = tags_crud.bulk_add_tags(db, repo_ids, tag_ids)
+    return {"message": f"Added tags to {updated} repositories"}
+
+
+@app.post("/api/bulk/remove-tags")
+async def bulk_remove_tags(
+    repo_ids: List[int],
+    tag_ids: List[int],
+    db: Session = Depends(get_db)
+):
+    """Remove tags from multiple repositories"""
+    updated = tags_crud.bulk_remove_tags(db, repo_ids, tag_ids)
+    return {"message": f"Removed tags from {updated} repositories"}
+
+
+# ============ HEALTH CHECK ENDPOINTS ============
+
+
+@app.post("/api/repositories/{repo_id}/check-health")
+async def check_repository_health(
+    repo_id: int,
+    db: Session = Depends(get_db)
+):
+    """Check if a repository still exists on GitHub"""
+    from services.github_service import GitHubService
+    from datetime import datetime
+
+    repo = repo_crud.get_repository(db, repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    exists = await GitHubService.check_repo_exists(repo.url)
+    repo.health_status = "healthy" if exists else "not_found"
+    repo.last_health_check = datetime.utcnow()
+
+    db.commit()
+    db.refresh(repo)
+
+    return {
+        "repository_id": repo_id,
+        "health_status": repo.health_status,
+        "checked_at": repo.last_health_check
+    }
+
+
+# ============ CLONE QUEUE ENDPOINTS ============
+
+
+from services.clone_queue import clone_queue, CloneStatus
+
+
+@app.on_event("startup")
+async def start_clone_queue():
+    """Start the clone queue worker on app startup"""
+    clone_queue.start()
+
+
+@app.on_event("shutdown")
+async def stop_clone_queue():
+    """Stop the clone queue worker on app shutdown"""
+    clone_queue.stop()
+
+
+@app.get("/api/clone-queue/status")
+async def get_clone_queue_status():
+    """Get clone queue status"""
+    return clone_queue.get_queue_status()
+
+
+@app.get("/api/clone-queue/jobs")
+async def get_clone_queue_jobs():
+    """Get all clone jobs"""
+    jobs = clone_queue.get_all_jobs()
+    return [
+        {
+            "id": job.id,
+            "repository_id": job.repository_id,
+            "repository_name": job.repository_name,
+            "status": job.status,
+            "progress": job.progress,
+            "error_message": job.error_message,
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            "created_at": job.created_at.isoformat()
+        }
+        for job in jobs
+    ]
+
+
+@app.post("/api/clone-queue/add")
+async def add_to_clone_queue(
+    repository_ids: List[int],
+    db: Session = Depends(get_db)
+):
+    """Add repositories to the clone queue"""
+    repos_to_clone = []
+    for repo_id in repository_ids:
+        repo = repo_crud.get_repository(db, repo_id)
+        if repo and not repo.cloned:
+            repos_to_clone.append({
+                "id": repo.id,
+                "name": repo.name,
+                "url": repo.url,
+                "path": repo.path or f"./repos/{repo.name}"
+            })
+
+    if not repos_to_clone:
+        return {"message": "No repositories to clone", "jobs_added": 0}
+
+    jobs = clone_queue.add_jobs(repos_to_clone)
+    return {
+        "message": f"Added {len(jobs)} repositories to clone queue",
+        "jobs_added": len(jobs),
+        "job_ids": [job.id for job in jobs]
+    }
+
+
+@app.post("/api/clone-queue/cancel/{job_id}")
+async def cancel_clone_job(job_id: int):
+    """Cancel a pending clone job"""
+    success = clone_queue.cancel_job(job_id)
+    if success:
+        return {"message": f"Job {job_id} cancelled"}
+    raise HTTPException(status_code=400, detail="Cannot cancel job (may be already in progress or completed)")
+
+
+@app.post("/api/clone-queue/clear")
+async def clear_clone_queue():
+    """Clear completed and failed jobs from the queue"""
+    clone_queue.clear_completed()
+    return {"message": "Cleared completed jobs"}
 
 
 if __name__ == "__main__":

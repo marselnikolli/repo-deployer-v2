@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   CheckCircle,
   Server,
@@ -7,11 +7,19 @@ import {
   ChevronLeft,
   ChevronRight,
   Folder,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Download,
+  Info,
+  Keyboard,
 } from 'lucide-react'
 import { useRepositoryStore } from '@/store/useRepositoryStore'
-import { repositoryApi, bulkApi, generalApi } from '@/api/client'
+import { repositoryApi, bulkApi, generalApi, searchApi, exportApi } from '@/api/client'
 import { cx } from '@/utils/cx'
 import toast from 'react-hot-toast'
+import { RepositoryDetails } from './RepositoryDetails'
+import { useKeyboardShortcuts, KEYBOARD_SHORTCUTS } from '@/hooks/useKeyboardShortcuts'
 
 // Utility to clean URLs by removing tracking parameters
 const cleanUrl = (url: string | undefined) => {
@@ -41,6 +49,8 @@ interface Repository {
   category: string
   cloned: boolean
   deployed: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export function RepositoryList() {
@@ -61,32 +71,77 @@ export function RepositoryList() {
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('')
   const [filterCategory, setFilterCategory] = useState<string | null>(null)
+  const [filterCloned, setFilterCloned] = useState<boolean | null>(null)
+  const [filterDeployed, setFilterDeployed] = useState<boolean | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [sortBy, setSortBy] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchRepositories()
     fetchCategories()
-  }, [currentPage, filterCategory])
+  }, [currentPage, filterCategory, filterCloned, filterDeployed, sortBy, sortOrder])
+
+  // debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 400)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
+  useEffect(() => {
+    // when search changes, reset to page 1 and fetch
+    setCurrentPage(1)
+    fetchRepositories()
+  }, [debouncedQuery])
 
   const fetchRepositories = async () => {
     try {
       setLoading(true)
       const skip = (currentPage - 1) * pageSize
-      const response = await repositoryApi.list(undefined, skip, pageSize)
-      let filtered = response.data
-      
-      // Apply category filter if selected
-      if (filterCategory) {
-        filtered = filtered.filter(r => r.category === filterCategory)
+      // If there's a search query or any filter, use the search API
+      if (debouncedQuery || filterCloned !== null || filterDeployed !== null) {
+        const resp = await searchApi.search(
+          debouncedQuery || undefined,
+          filterCategory || undefined,
+          filterCloned ?? undefined,
+          filterDeployed ?? undefined,
+          pageSize,
+          skip
+        )
+        const data = resp.data
+        const items = data.results || []
+        setRepositories(items)
+        setTotalCount(data.total || 0)
+      } else {
+        const response = await repositoryApi.list(
+          filterCategory || undefined,
+          skip,
+          pageSize,
+          sortBy || undefined,
+          sortOrder
+        )
+        let filtered = response.data
+
+        // Apply category filter if selected (fallback)
+        if (filterCategory) {
+          filtered = filtered.filter(r => r.category === filterCategory)
+        }
+
+        setRepositories(filtered)
+        // For total count, fetch all (or use a separate endpoint)
+        const allResponse = await repositoryApi.list(filterCategory || undefined, 0, 10000)
+        let totalFiltered = allResponse.data
+        if (filterCategory) {
+          totalFiltered = totalFiltered.filter(r => r.category === filterCategory)
+        }
+        setTotalCount(totalFiltered.length)
       }
-      
-      setRepositories(filtered)
-      // For total count, fetch all (or use a separate endpoint)
-      const allResponse = await repositoryApi.list(undefined, 0, 10000)
-      let totalFiltered = allResponse.data
-      if (filterCategory) {
-        totalFiltered = totalFiltered.filter(r => r.category === filterCategory)
-      }
-      setTotalCount(totalFiltered.length)
     } catch {
       toast.error('Failed to fetch repositories')
     } finally {
@@ -150,11 +205,36 @@ export function RepositoryList() {
 
     try {
       setLoading(true)
-      const allIds = repositories.map(r => r.id)
+      // Fetch all matching IDs according to current filters/search
+      let allIds: number[] = []
+      if (debouncedQuery || filterCloned !== null || filterDeployed !== null) {
+        // use search API to get all (up to 10000)
+        const resp = await searchApi.search(
+          debouncedQuery || undefined,
+          filterCategory || undefined,
+          filterCloned ?? undefined,
+          filterDeployed ?? undefined,
+          10000,
+          0
+        )
+        const data = resp.data
+        allIds = (data.results || []).map((r: any) => r.id)
+      } else {
+        const resp = await repositoryApi.list(filterCategory || undefined, 0, 10000)
+        allIds = (resp.data || []).map((r: any) => r.id)
+      }
+      if (allIds.length === 0) {
+        toast('No repositories to delete')
+        setLoading(false)
+        return
+      }
       await bulkApi.delete(allIds)
       toast.success(`Deleted all ${totalCount} repositories`)
       clearSelection()
       setFilterCategory(null)
+      setFilterCloned(null)
+      setFilterDeployed(null)
+      setSearchQuery('')
       fetchRepositories()
     } catch {
       toast.error('Failed to delete all repositories')
@@ -164,6 +244,89 @@ export function RepositoryList() {
   }
 
   const totalPages = Math.ceil(totalCount / pageSize)
+
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      // Toggle order if same column
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      // New column, default to ascending
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+    setCurrentPage(1)
+  }
+
+  const getSortIcon = (column: string) => {
+    if (sortBy !== column) {
+      return <ArrowUpDown className="size-3 opacity-50" />
+    }
+    return sortOrder === 'asc' ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />
+  }
+
+  const handleExport = (format: 'csv' | 'json' | 'markdown') => {
+    const url = format === 'csv'
+      ? exportApi.csv(filterCategory || undefined)
+      : format === 'json'
+      ? exportApi.json(filterCategory || undefined)
+      : exportApi.markdown(filterCategory || undefined)
+
+    window.open(url, '_blank')
+    setShowExportMenu(false)
+    toast.success(`Exporting as ${format.toUpperCase()}...`)
+  }
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onSearch: () => searchInputRef.current?.focus(),
+    onNextItem: () => {
+      if (repositories.length > 0) {
+        setFocusedIndex((prev) => Math.min(prev + 1, repositories.length - 1))
+      }
+    },
+    onPrevItem: () => {
+      if (repositories.length > 0) {
+        setFocusedIndex((prev) => Math.max(prev - 1, 0))
+      }
+    },
+    onSelectItem: () => {
+      if (focusedIndex >= 0 && focusedIndex < repositories.length) {
+        toggleSelection(repositories[focusedIndex].id)
+      }
+    },
+    onOpenDetails: () => {
+      if (focusedIndex >= 0 && focusedIndex < repositories.length) {
+        setSelectedRepo(repositories[focusedIndex])
+      }
+    },
+    onDelete: () => {
+      if (selectedIds.size > 0) {
+        handleBulkDelete()
+      }
+    },
+    onClearSelection: () => {
+      clearSelection()
+      setFocusedIndex(-1)
+    },
+    onSelectAll: () => {
+      if (selectedIds.size === repositories.length) {
+        clearSelection()
+      } else {
+        selectAll(repositories)
+      }
+    },
+    onExport: () => setShowExportMenu(true),
+    onRefresh: () => fetchRepositories(),
+    onEscape: () => {
+      if (selectedRepo) {
+        setSelectedRepo(null)
+      } else if (selectedIds.size > 0) {
+        clearSelection()
+      } else {
+        setFocusedIndex(-1)
+      }
+    },
+  }, !selectedRepo) // Disable shortcuts when details panel is open
 
   if (loading && repositories.length === 0) {
     return (
@@ -179,17 +342,41 @@ export function RepositoryList() {
         <h2 className="text-[length:var(--text-display-xs)] font-semibold text-[var(--color-fg-primary)]">
           Repositories
         </h2>
-        <span className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)]">
-          {totalCount} total
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowShortcuts(!showShortcuts)}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--color-fg-tertiary)] hover:text-[var(--color-fg-secondary)] transition-colors"
+            title="Keyboard shortcuts"
+          >
+            <Keyboard className="size-4" />
+            Shortcuts
+          </button>
+          <span className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)]">
+            {totalCount} total
+          </span>
+        </div>
       </div>
+
+      {/* Keyboard Shortcuts Help */}
+      {showShortcuts && (
+        <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border-secondary)] rounded-lg p-4">
+          <h3 className="text-sm font-medium text-[var(--color-fg-primary)] mb-2">Keyboard Shortcuts</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {KEYBOARD_SHORTCUTS.map(({ key, description }) => (
+              <div key={key} className="flex items-center gap-2 text-xs">
+                <kbd className="px-1.5 py-0.5 bg-[var(--color-bg-tertiary)] border border-[var(--color-border-primary)] rounded text-[var(--color-fg-secondary)] font-mono">
+                  {key}
+                </kbd>
+                <span className="text-[var(--color-fg-tertiary)]">{description}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filter and Actions Row */}
       <div className="flex items-center gap-3 justify-between flex-wrap">
-        <div className="flex items-center gap-2">
-          <label className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">
-            Filter by category:
-          </label>
+        <div className="flex items-center gap-3 flex-wrap">
           <select
             value={filterCategory || ''}
             onChange={(e) => {
@@ -198,35 +385,105 @@ export function RepositoryList() {
             }}
             className="px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 hover:border-[var(--color-brand-300)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)]"
           >
-            <option value="" className="text-gray-900">All Categories</option>
+            <option value="" className="text-[var(--color-fg-primary)] dark:text-gray-100">All Categories</option>
             {categories.map((cat) => (
-              <option key={cat} value={cat} className="text-gray-900">
+              <option key={cat} value={cat} className="text-[var(--color-fg-primary)] dark:text-gray-100">
                 {cat}
               </option>
             ))}
           </select>
-          {filterCategory && (
+          <input
+            ref={searchInputRef}
+            placeholder="Search repositories... (press /)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-white dark:bg-slate-800 text-[var(--color-fg-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] min-w-[200px]"
+          />
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filterCloned === true}
+              onChange={(e) => {
+                setFilterCloned(e.target.checked ? true : null)
+                setCurrentPage(1)
+              }}
+              className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
+            />
+            <span className="text-[length:var(--text-sm)] text-[var(--color-fg-secondary)]">Cloned</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filterDeployed === true}
+              onChange={(e) => {
+                setFilterDeployed(e.target.checked ? true : null)
+                setCurrentPage(1)
+              }}
+              className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
+            />
+            <span className="text-[length:var(--text-sm)] text-[var(--color-fg-secondary)]">Deployed</span>
+          </label>
+          {(filterCategory || filterCloned !== null || filterDeployed !== null || searchQuery) && (
             <button
               onClick={() => {
                 setFilterCategory(null)
+                setFilterCloned(null)
+                setFilterDeployed(null)
+                setSearchQuery('')
                 setCurrentPage(1)
               }}
               className="px-3 py-2 text-[length:var(--text-sm)] font-medium text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] underline"
             >
-              Clear
+              Clear filters
             </button>
           )}
         </div>
-        {totalCount > 0 && (
-          <button
-            onClick={handleDeleteAll}
-            disabled={loading}
-            className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 border border-red-700 rounded-[var(--radius-md)] transition-colors flex items-center gap-2"
-          >
-            <Trash2 className="size-4" />
-            Delete All
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Export Dropdown */}
+          {totalCount > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)] bg-white hover:bg-[var(--color-bg-tertiary)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] transition-colors flex items-center gap-2"
+              >
+                <Download className="size-4" />
+                Export
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 mt-1 w-40 bg-white border border-[var(--color-border-primary)] rounded-[var(--radius-md)] shadow-lg z-10">
+                  <button
+                    onClick={() => handleExport('csv')}
+                    className="w-full px-4 py-2 text-left text-[length:var(--text-sm)] hover:bg-[var(--color-bg-tertiary)]"
+                  >
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport('json')}
+                    className="w-full px-4 py-2 text-left text-[length:var(--text-sm)] hover:bg-[var(--color-bg-tertiary)]"
+                  >
+                    Export as JSON
+                  </button>
+                  <button
+                    onClick={() => handleExport('markdown')}
+                    className="w-full px-4 py-2 text-left text-[length:var(--text-sm)] hover:bg-[var(--color-bg-tertiary)]"
+                  >
+                    Export as Markdown
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {totalCount > 0 && (
+            <button
+              onClick={handleDeleteAll}
+              disabled={loading}
+              className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 border border-red-700 rounded-[var(--radius-md)] transition-colors flex items-center gap-2"
+            >
+              <Trash2 className="size-4" />
+              Delete All
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Bulk Actions Bar */}
@@ -281,45 +538,85 @@ export function RepositoryList() {
                       className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
-                    Name
+                  <th
+                    className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none"
+                    onClick={() => handleSort('name')}
+                  >
+                    <span className="flex items-center gap-1">
+                      Name
+                      {getSortIcon('name')}
+                    </span>
                   </th>
                   <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
                     URL
                   </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
-                    Category
+                  <th
+                    className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none"
+                    onClick={() => handleSort('category')}
+                  >
+                    <span className="flex items-center gap-1">
+                      Category
+                      {getSortIcon('category')}
+                    </span>
                   </th>
                   <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
                     Status
                   </th>
+                  <th
+                    className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none"
+                    onClick={() => handleSort('created_at')}
+                  >
+                    <span className="flex items-center gap-1">
+                      Added
+                      {getSortIcon('created_at')}
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border-secondary)]">
-                {repositories?.filter(repo => repo != null).map((repo: Repository) => (
+                {repositories?.filter(repo => repo != null).map((repo: Repository, index: number) => (
                   <tr
                     key={repo?.id || Math.random()}
                     className={cx(
-                      'hover:bg-[var(--color-bg-secondary)] transition-colors',
-                      selectedIds.has(repo?.id) && 'bg-[var(--color-brand-25)]'
+                      'hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer',
+                      selectedIds.has(repo?.id) && 'bg-[var(--color-brand-25)]',
+                      focusedIndex === index && 'ring-2 ring-inset ring-[var(--color-brand-400)]'
                     )}
+                    onClick={() => setFocusedIndex(index)}
+                    onDoubleClick={() => setSelectedRepo(repo)}
                   >
                     <td className="px-4 py-3">
                       <input
                         type="checkbox"
                         checked={repo?.id ? selectedIds.has(repo.id) : false}
-                        onChange={() => repo?.id && toggleSelection(repo.id)}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          repo?.id && toggleSelection(repo.id)
+                        }}
+                        onClick={(e) => e.stopPropagation()}
                         className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <div>
-                        <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">
-                          {repo?.name || 'Unknown'}
-                        </p>
-                        <p className="text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] truncate max-w-xs">
-                          {repo?.title || 'No title'}
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">
+                            {repo?.name || 'Unknown'}
+                          </p>
+                          <p className="text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] truncate max-w-xs">
+                            {repo?.title || 'No title'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedRepo(repo)
+                          }}
+                          className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-fg-quaternary)] hover:text-[var(--color-fg-secondary)]"
+                          title="View details"
+                        >
+                          <Info className="size-4" />
+                        </button>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -357,6 +654,9 @@ export function RepositoryList() {
                           </span>
                         )}
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)]">
+                      {repo?.created_at ? new Date(repo.created_at).toLocaleDateString() : '—'}
                     </td>
                   </tr>
                 ))}
@@ -475,6 +775,15 @@ export function RepositoryList() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Repository Details Modal */}
+      {selectedRepo && (
+        <RepositoryDetails
+          repository={selectedRepo}
+          onClose={() => setSelectedRepo(null)}
+          onUpdate={fetchRepositories}
+        />
       )}
     </div>
   )

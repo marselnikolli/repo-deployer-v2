@@ -11,7 +11,12 @@
       "Bash(docker exec:*)",
       "Bash(move:*)",
       "WebFetch(domain:www.untitledui.com)",
-      "Bash(docker-compose down:*)"
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose exec db psql:*)"
     ]
   }
 }

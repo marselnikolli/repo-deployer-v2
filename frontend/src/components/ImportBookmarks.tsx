@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Upload, AlertCircle, CheckCircle, X, File } from 'lucide-react'
+import { Upload, AlertCircle, CheckCircle, X, File as FileIcon } from 'lucide-react'
 import { importApi } from '@/api/client'
 import { cx } from '@/utils/cx'
 import toast from 'react-hot-toast'
@@ -190,7 +190,7 @@ export function ImportBookmarks() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-[var(--radius-lg)] bg-[var(--color-success-50)] flex items-center justify-center">
-                  <File06 className="size-5 text-[var(--color-success-600)]" />
+                  <FileIcon className="size-5 text-[var(--color-success-600)]" />
                 </div>
                 <div>
                   <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">

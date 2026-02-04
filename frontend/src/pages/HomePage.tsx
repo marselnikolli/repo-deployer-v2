@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { Tabs, TabList, Tab, TabPanel } from 'react-aria-components'
 import { useNavigate } from 'react-router-dom'
-import { BarChart3, Download, Package, Search, LogOut, Plus } from 'lucide-react'
+import { BarChart3, Download, Package, LogOut, Plus } from 'lucide-react'
 import { Dashboard } from '@/components/Dashboard'
 import { ImportBookmarks } from '@/components/ImportBookmarks'
 import { RepositoryList } from '@/components/RepositoryList'
 import { AddRepository } from '@/components/AddRepository'
-import SearchPage from '@/pages/SearchPage'
 import { useTheme } from '@/providers/theme-provider'
 import { useAuth } from '@/contexts/AuthContext'
 import { cx } from '@/utils/cx'
@@ -106,20 +105,6 @@ export function HomePage() {
                 Repositories
               </Tab>
               <Tab
-                id="search"
-                className={({ isSelected }) =>
-                  cx(
-                    'flex items-center gap-2 px-1 py-4 text-[length:var(--text-sm)] font-medium border-b-2 transition-colors outline-none cursor-pointer',
-                    isSelected
-                      ? 'border-[var(--color-brand-500)] text-[var(--color-brand-600)]'
-                      : 'border-transparent text-[var(--color-fg-quaternary)] hover:text-[var(--color-fg-secondary)] hover:border-[var(--color-border-primary)]'
-                  )
-                }
-              >
-                <Search className="size-5" />
-                Search
-              </Tab>
-              <Tab
                 id="add"
                 className={({ isSelected }) =>
                   cx(
@@ -146,11 +131,6 @@ export function HomePage() {
           </TabPanel>
           <TabPanel id="repositories">
             <RepositoryList />
-          </TabPanel>
-          <TabPanel id="search">
-            <div className="max-w-4xl -mx-4 sm:-mx-6 lg:-mx-8">
-              <SearchPage />
-            </div>
           </TabPanel>
           <TabPanel id="add">
             <AddRepository onRepositoryAdded={() => setSelectedTab('repositories')} />

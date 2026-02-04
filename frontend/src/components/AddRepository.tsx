@@ -1,9 +1,41 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { repositoryApi } from '@/api/client'
 import toast from 'react-hot-toast'
 
+// Map GitHub topics to categories
+const TOPIC_TO_CATEGORY: Record<string, string> = {
+  'security': 'security',
+  'ci': 'ci_cd',
+  'ci-cd': 'ci_cd',
+  'cicd': 'ci_cd',
+  'database': 'database',
+  'db': 'database',
+  'devops': 'devops',
+  'docker': 'devops',
+  'kubernetes': 'devops',
+  'api': 'api',
+  'rest': 'api',
+  'graphql': 'api',
+  'frontend': 'frontend',
+  'react': 'frontend',
+  'vue': 'frontend',
+  'angular': 'frontend',
+  'backend': 'backend',
+  'nodejs': 'backend',
+  'python': 'backend',
+  'go': 'backend',
+  'rust': 'backend',
+  'java': 'backend',
+  'machine-learning': 'ml_ai',
+  'ml': 'ml_ai',
+  'ai': 'ml_ai',
+  'artificial-intelligence': 'ml_ai',
+}
+
 export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => void }) {
   const [loading, setLoading] = useState(false)
+  const [fetchingMetadata, setFetchingMetadata] = useState(false)
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     url: '',
@@ -11,6 +43,96 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
     category: 'other',
     description: '',
   })
+
+  // Extract owner and repo from GitHub URL
+  const extractRepoInfo = (url: string): { owner: string; repo: string } | null => {
+    try {
+      const urlObj = new URL(url)
+      const pathname = urlObj.pathname.toLowerCase()
+      const parts = pathname.split('/').filter(p => p)
+      
+      if (parts.length >= 2 && urlObj.hostname.includes('github.com')) {
+        return {
+          owner: parts[0],
+          repo: parts[1].replace('.git', ''),
+        }
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+
+  // Fetch repository metadata from GitHub API
+  const fetchRepositoryMetadata = async (url: string) => {
+    const repoInfo = extractRepoInfo(url)
+    if (!repoInfo) return
+
+    setFetchingMetadata(true)
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}`,
+        {
+          headers: {
+            'Accept': 'application/vnd.github.v3+json',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        setFetchingMetadata(false)
+        return
+      }
+
+      const data = await response.json()
+
+      // Update description if available
+      if (data.description) {
+        setFormData(prev => ({
+          ...prev,
+          description: data.description || '',
+        }))
+      }
+
+      // Detect category from topics
+      if (data.topics && Array.isArray(data.topics) && data.topics.length > 0) {
+        for (const topic of data.topics) {
+          const category = TOPIC_TO_CATEGORY[topic.toLowerCase()]
+          if (category) {
+            setFormData(prev => ({
+              ...prev,
+              category,
+            }))
+            break // Use the first matching topic
+          }
+        }
+      }
+    } catch (error) {
+      // Silently fail - GitHub API might be rate limited or URL might be invalid
+      console.debug('Failed to fetch GitHub metadata:', error)
+    } finally {
+      setFetchingMetadata(false)
+    }
+  }
+
+  // Debounced URL change handler
+  useEffect(() => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current)
+    }
+
+    if (formData.url && formData.url.includes('github.com')) {
+      debounceTimeoutRef.current = setTimeout(() => {
+        fetchRepositoryMetadata(formData.url)
+      }, 800) // Wait 800ms after user stops typing
+    }
+
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current)
+      }
+    }
+  }, [formData.url])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -101,16 +223,28 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
           <label htmlFor="url" className="block text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)] mb-1">
             GitHub URL *
           </label>
-          <input
-            id="url"
-            name="url"
-            type="url"
-            value={formData.url}
-            onChange={handleInputChange}
-            placeholder="e.g., https://github.com/username/repo-name"
-            className="w-full px-4 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)]"
-            required
-          />
+          <div className="relative">
+            <input
+              id="url"
+              name="url"
+              type="url"
+              value={formData.url}
+              onChange={handleInputChange}
+              placeholder="e.g., https://github.com/username/repo-name"
+              className="w-full px-4 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)]"
+              required
+            />
+            {fetchingMetadata && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div className="animate-spin">
+                  <span className="text-sm text-[var(--color-brand-600)]">⟳</span>
+                </div>
+              </div>
+            )}
+          </div>
+          {fetchingMetadata && (
+            <p className="text-xs text-[var(--color-fg-quaternary)] mt-1">Fetching repository info...</p>
+          )}
         </div>
 
         <div>
@@ -131,6 +265,9 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
         <div>
           <label htmlFor="category" className="block text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)] mb-1">
             Category
+            {formData.category !== 'other' && fetchingMetadata === false && (
+              <span className="text-[length:var(--text-xs)] text-[var(--color-brand-600)] ml-2">(auto-detected)</span>
+            )}
           </label>
           <select
             id="category"
@@ -154,6 +291,9 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
         <div>
           <label htmlFor="description" className="block text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)] mb-1">
             Description
+            {formData.description && fetchingMetadata === false && (
+              <span className="text-[length:var(--text-xs)] text-[var(--color-brand-600)] ml-2">(auto-filled)</span>
+            )}
           </label>
           <textarea
             id="description"

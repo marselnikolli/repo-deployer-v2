@@ -2,8 +2,29 @@
 
 from pydantic import BaseModel, HttpUrl
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
+
+# ============ TAG SCHEMAS ============
+
+class TagBase(BaseModel):
+    name: str
+    color: str = "#6B7280"
+
+
+class TagCreate(TagBase):
+    pass
+
+
+class TagSchema(TagBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============ REPOSITORY SCHEMAS ============
 
 class RepositoryBase(BaseModel):
     name: str
@@ -17,6 +38,15 @@ class RepositoryCreate(RepositoryBase):
     pass
 
 
+class RepositoryUpdate(BaseModel):
+    """Schema for partial repository updates"""
+    name: Optional[str] = None
+    url: Optional[str] = None
+    title: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+
+
 class RepositorySchema(RepositoryBase):
     id: int
     cloned: bool
@@ -24,20 +54,57 @@ class RepositorySchema(RepositoryBase):
     last_synced: Optional[datetime]
     created_at: datetime
     updated_at: datetime
-    
+    # GitHub metadata
+    stars: int = 0
+    forks: int = 0
+    watchers: int = 0
+    language: Optional[str] = None
+    languages: Optional[Dict[str, int]] = None
+    topics: Optional[List[str]] = None
+    license: Optional[str] = None
+    archived: bool = False
+    is_fork: bool = False
+    open_issues: int = 0
+    default_branch: str = "main"
+    github_created_at: Optional[datetime] = None
+    github_updated_at: Optional[datetime] = None
+    github_pushed_at: Optional[datetime] = None
+    last_metadata_sync: Optional[datetime] = None
+    # Health
+    health_status: str = "unknown"
+    last_health_check: Optional[datetime] = None
+    # Tags
+    tags: List[TagSchema] = []
+
     class Config:
         from_attributes = True
 
+
+class RepositoryWithMetadata(RepositorySchema):
+    """Extended schema with full metadata"""
+    pass
+
+
+# ============ BULK OPERATIONS ============
 
 class BulkActionRequest(BaseModel):
     repository_ids: List[int]
     new_category: Optional[str] = None
 
 
+class BulkTagRequest(BaseModel):
+    repository_ids: List[int]
+    tag_ids: List[int]
+
+
+# ============ IMPORT/EXPORT ============
+
 class ImportResponse(BaseModel):
     total_found: int
     message: str
 
+
+# ============ STATS ============
 
 class CategoryStats(BaseModel):
     name: str
@@ -51,3 +118,24 @@ class StatsResponse(BaseModel):
     total_deployed: int
     categories: List[CategoryStats]
     last_import: Optional[datetime]
+
+
+# ============ GITHUB METADATA ============
+
+class GitHubMetadataResponse(BaseModel):
+    stars: int
+    forks: int
+    watchers: int
+    language: Optional[str]
+    languages: Dict[str, int]
+    topics: List[str]
+    description: Optional[str]
+    license: Optional[str]
+    archived: bool
+    is_fork: bool
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    pushed_at: Optional[str]
+    open_issues: int
+    default_branch: str
+    suggested_category: str

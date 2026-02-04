@@ -3,7 +3,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 from models import Repository, CategoryEnum
-from schemas import RepositoryCreate, RepositorySchema
+from schemas import RepositoryCreate, RepositorySchema, RepositoryUpdate
 from datetime import datetime
 from typing import List, Optional
 
@@ -27,14 +27,28 @@ def get_repositories(
     db: Session,
     category: Optional[str] = None,
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
+    sort_by: Optional[str] = None,
+    sort_order: Optional[str] = "asc"
 ) -> List[Repository]:
-    """Get repositories with optional filtering"""
+    """Get repositories with optional filtering and sorting"""
     query = db.query(Repository)
-    
+
     if category:
         query = query.filter(Repository.category == category)
-    
+
+    # Apply sorting
+    if sort_by:
+        sort_column = getattr(Repository, sort_by, None)
+        if sort_column is not None:
+            if sort_order == "desc":
+                query = query.order_by(sort_column.desc())
+            else:
+                query = query.order_by(sort_column.asc())
+    else:
+        # Default sort by id descending (newest first)
+        query = query.order_by(Repository.id.desc())
+
     return query.offset(skip).limit(limit).all()
 
 
