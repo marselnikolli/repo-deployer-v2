@@ -1,32 +1,32 @@
-# GitHub Repo Deployer v2.0 - FastAPI + React + PostgreSQL
+# Repo Deployer v2
 
-Professional-grade repository management and deployment tool with modern full-stack architecture.
+A powerful, self-hosted platform for managing, cloning, and deploying GitHub repositories. Import your browser bookmarks, organize repositories by category and tags, fetch GitHub metadata, and deploy to Docker containers.
 
-## Architecture Overview
+## Features
 
-```
-┌─────────────────────────────────────────────────────┐
-│         React Frontend (http://localhost:3000)      │
-│  - Modern UI with TypeScript                         │
-│  - Real-time updates with React Query               │
-│  - Zustand state management                         │
-└────────────────┬────────────────────────────────────┘
-                 │ HTTP/REST
-┌────────────────▼────────────────────────────────────┐
-│      FastAPI Backend (http://localhost:8000)       │
-│  - RESTful API with OpenAPI docs                    │
-│  - Async/await for high performance                │
-│  - Background job processing                       │
-│  - Docker integration                              │
-└────────────────┬────────────────────────────────────┘
-                 │ SQL
-┌────────────────▼────────────────────────────────────┐
-│   PostgreSQL Database (localhost:5432)             │
-│  - Persistent repository metadata                  │
-│  - ACID transactions                               │
-│  - Full-text search capable                        │
-└──────────────────────────────────────────────────────┘
-```
+### Repository Management
+- **Bookmark Import** - Import GitHub URLs from browser bookmark HTML files (Chrome, Firefox, Edge)
+- **Drag & Drop** - Simply drag bookmark files onto the import area
+- **Smart Categorization** - Automatic category suggestions based on repository topics, language, and description
+- **Custom Tags** - Create color-coded tags for flexible organization
+- **Bulk Operations** - Update categories, clone, or delete multiple repositories at once
+
+### GitHub Integration
+- **Metadata Sync** - Fetch stars, forks, watchers, language, topics, and license info
+- **Health Monitoring** - Check if repositories still exist on GitHub
+- **Duplicate Detection** - Prevents importing the same repository twice
+
+### Clone & Deploy
+- **Batch Cloning** - Clone multiple repositories simultaneously (up to 3 concurrent)
+- **Progress Tracking** - Real-time clone progress with status updates
+- **Docker Deployment** - Deploy cloned repositories to Docker containers
+
+### User Experience
+- **Keyboard Shortcuts** - Vim-style navigation (j/k), quick search (/), and more
+- **Sortable Columns** - Sort by name, date, stars, or any column
+- **Advanced Filters** - Filter by category, cloned status, deployed status
+- **Export Options** - Export to CSV, JSON, or Markdown
+- **Repository Details** - View full metadata in a slide-out panel
 
 ## Quick Start
 
@@ -36,211 +36,197 @@ Professional-grade repository management and deployment tool with modern full-st
 
 ### Installation
 
-1. **Clone the repository**
 ```bash
+# Clone the repository
+git clone <your-repo-url>
 cd repo-deployer-v2
-```
 
-2. **Configure environment**
-```bash
-cp backend/.env.example backend/.env
-# Edit backend/.env if needed
-```
-
-3. **Start services**
-```bash
+# Start all services
 docker-compose up --build
 ```
 
-4. **Access the application**
-- Frontend: http://localhost:3000
-- API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-- Database: localhost:5432
+### Access Points
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| API | http://localhost:8000 |
+| API Docs | http://localhost:8000/docs |
+| Database | localhost:5432 |
 
-## API Endpoints
+## Architecture
 
-### Import Operations
-- `POST /api/import/html` - Import from HTML bookmark file
-- `POST /api/import/folder` - Import from bookmark folder
+```
+┌─────────────────────────────────────────────────────────┐
+│              React 19 Frontend (TypeScript)             │
+│  • Vite build system                                    │
+│  • Zustand state management                             │
+│  • Tailwind CSS styling                                 │
+└─────────────────────┬───────────────────────────────────┘
+                      │ REST API
+┌─────────────────────▼───────────────────────────────────┐
+│              FastAPI Backend (Python 3.11)              │
+│  • Async endpoints                                      │
+│  • Background task processing                           │
+│  • Clone queue with threading                           │
+└─────────────────────┬───────────────────────────────────┘
+                      │ SQLAlchemy ORM
+┌─────────────────────▼───────────────────────────────────┐
+│              PostgreSQL 16 + Redis 7                    │
+│  • Repository metadata storage                          │
+│  • Tags and categories                                  │
+│  • Caching layer                                        │
+└─────────────────────────────────────────────────────────┘
+```
 
-### Repository Management
-- `GET /api/repositories` - List repositories
-- `GET /api/repositories/{id}` - Get repository details
-- `PUT /api/repositories/{id}` - Update repository
-- `DELETE /api/repositories/{id}` - Delete repository
+## API Reference
 
-### Git Operations
-- `POST /api/repositories/{id}/clone` - Clone repository
-- `POST /api/repositories/{id}/sync` - Sync/pull updates
-- `POST /api/repositories/{id}/deploy` - Deploy to Docker
+### Repositories
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/repositories` | List all repositories (supports sorting, pagination) |
+| GET | `/api/repositories/{id}` | Get repository details |
+| POST | `/api/repositories` | Create new repository |
+| PUT | `/api/repositories/{id}` | Update repository |
+| DELETE | `/api/repositories/{id}` | Delete repository |
+| POST | `/api/repositories/{id}/clone` | Clone repository |
+| POST | `/api/repositories/{id}/sync` | Sync/pull updates |
+| POST | `/api/repositories/{id}/sync-metadata` | Fetch GitHub metadata |
+| POST | `/api/repositories/{id}/check-health` | Check repository health |
+
+### Clone Queue
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/clone-queue/status` | Get queue status |
+| GET | `/api/clone-queue/jobs` | List all jobs |
+| POST | `/api/clone-queue/add` | Add repositories to queue |
+| POST | `/api/clone-queue/cancel/{id}` | Cancel pending job |
+| POST | `/api/clone-queue/clear` | Clear completed jobs |
+
+### Tags
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/tags` | List all tags |
+| POST | `/api/tags` | Create new tag |
+| DELETE | `/api/tags/{id}` | Delete tag |
+| POST | `/api/repositories/{id}/tags` | Add tags to repository |
+
+### Import & Export
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/import/html` | Import from HTML bookmark file |
+| GET | `/api/export/csv` | Export to CSV |
+| GET | `/api/export/json` | Export to JSON |
+| GET | `/api/export/markdown` | Export to Markdown |
 
 ### Bulk Operations
-- `POST /api/bulk/update-category` - Update category for multiple repos
-- `POST /api/bulk/delete` - Delete multiple repositories
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/bulk/update-category` | Update category for multiple repos |
+| POST | `/api/bulk/delete` | Delete multiple repositories |
 
-### Metadata
-- `GET /api/categories` - List categories with counts
-- `GET /api/stats` - Application statistics
-- `GET /api/health` - Health check
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `/` | Focus search |
+| `j` | Next item |
+| `k` | Previous item |
+| `Enter` / `Space` | Toggle selection |
+| `o` | Open details panel |
+| `d` | Delete selected |
+| `Esc` | Clear selection / Close modal |
+| `Ctrl+A` | Select all |
+| `Ctrl+E` | Export |
+| `Ctrl+Shift+R` | Refresh |
 
 ## Project Structure
 
 ```
 repo-deployer-v2/
 ├── backend/
-│   ├── main.py              # FastAPI application
-│   ├── database.py          # Database configuration
-│   ├── models.py            # SQLAlchemy models
-│   ├── schemas.py           # Pydantic schemas
+│   ├── main.py                 # FastAPI application & routes
+│   ├── database.py             # Database configuration
+│   ├── models.py               # SQLAlchemy models
+│   ├── schemas.py              # Pydantic schemas
 │   ├── crud/
-│   │   └── repository.py    # CRUD operations
+│   │   ├── repository.py       # Repository CRUD
+│   │   └── tags.py             # Tags CRUD
 │   ├── services/
-│   │   ├── bookmark_parser.py   # HTML parsing
-│   │   ├── git_service.py       # Git operations
-│   │   └── docker_service.py    # Docker operations
+│   │   ├── bookmark_parser.py  # HTML bookmark parsing
+│   │   ├── git_service.py      # Git clone/sync operations
+│   │   ├── github_service.py   # GitHub API integration
+│   │   ├── clone_queue.py      # Batch clone queue
+│   │   └── export_service.py   # CSV/JSON/Markdown export
 │   ├── requirements.txt
-│   ├── Dockerfile
-│   └── .env.example
+│   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── api/
-│   │   │   └── client.ts    # API client
-│   │   ├── store/
-│   │   │   └── useRepositoryStore.ts
-│   │   ├── components/      # React components
-│   │   └── pages/           # Page components
+│   │   ├── api/client.ts       # API client
+│   │   ├── store/              # Zustand stores
+│   │   ├── components/         # React components
+│   │   ├── hooks/              # Custom hooks
+│   │   └── pages/              # Page components
 │   ├── package.json
-│   ├── vite.config.ts
 │   └── Dockerfile
 ├── docker-compose.yml
-└── README.md
+├── README.md
+├── FEATURES_ROADMAP.md         # Implementation status
+└── FUTURE_FEATURES.md          # Planned features
 ```
-
-## Database Schema
-
-### repositories table
-```sql
-CREATE TABLE repositories (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(255) UNIQUE NOT NULL,
-  url VARCHAR(512) UNIQUE NOT NULL,
-  title VARCHAR(512),
-  description TEXT,
-  category VARCHAR(50),
-  path VARCHAR(512),
-  cloned BOOLEAN DEFAULT FALSE,
-  deployed BOOLEAN DEFAULT FALSE,
-  last_synced TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-## Features
-
-✅ **Import Management**
-- Upload HTML bookmark files
-- Scan folder for bookmark files
-- Automatic GitHub URL extraction
-- Intelligent categorization
-
-✅ **Repository Management**
-- List and search repositories
-- View detailed repository info
-- Categorize repositories
-- Bulk operations
-
-✅ **Git Operations**
-- Clone repositories
-- Pull/sync updates
-- Repository information tracking
-- Background processing
-
-✅ **Docker Integration**
-- Build Docker images
-- Manage containers
-- Automatic deployment
-
-✅ **API Features**
-- RESTful endpoints
-- OpenAPI/Swagger documentation
-- CORS support
-- Error handling
 
 ## Development
 
-### Backend Development
+### Backend
 ```bash
 cd backend
-python -m pip install -r requirements.txt
+python -m venv venv
+source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-### Frontend Development
+### Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### Database Migrations
-```bash
-# Uses SQLAlchemy auto-migration via models.py
-# On app start, all tables are created automatically
-```
-
-## Deployment
-
-### Production Build
-```bash
-docker-compose -f docker-compose.yml build
-docker-compose -f docker-compose.yml up -d
-```
+## Configuration
 
 ### Environment Variables
 
-**Backend (.env)**
+Create `backend/.env`:
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/repo_deployer
+REDIS_URL=redis://localhost:6379
+GITHUB_TOKEN=your_github_token_optional
+MIRROR_DIR=/path/to/cloned/repos
 ```
-DATABASE_URL=postgresql://user:password@host:5432/db_name
-MIRROR_DIR=/path/to/mirrors
-LOG_LEVEL=INFO
-```
 
-## Performance Considerations
+## Tech Stack
 
-- PostgreSQL with indexing on frequently queried fields
-- Connection pooling (10 connections, max 20 overflow)
-- Async API endpoints for non-blocking operations
-- Background tasks for long-running operations
-- React Query for client-side caching
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Zustand |
+| Backend | Python 3.11, FastAPI, SQLAlchemy, Pydantic |
+| Database | PostgreSQL 16 |
+| Cache | Redis 7 |
+| Container | Docker, Docker Compose |
 
-## Security
+## Contributing
 
-- CORS configuration per environment
-- SQL injection prevention (SQLAlchemy ORM)
-- Input validation (Pydantic schemas)
-- Docker isolation
-- Environment variable management
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## Monitoring & Logging
+## License
 
-- Health check endpoints
-- Application statistics
-- Error logging
-- Container logs via Docker
-
-## Next Steps for Production
-
-1. Add authentication (OAuth2, JWT)
-2. Set up SSL/TLS
-3. Configure database backups
-4. Add comprehensive logging
-5. Set up monitoring (Prometheus, Grafana)
-6. Add automated tests
-7. Set up CI/CD pipeline
+MIT License - see LICENSE file for details.
 
 ---
 
-**Version:** 2.0.0  
-**Last Updated:** February 3, 2026
+**Version:** 2.1.0
+**Last Updated:** February 2026

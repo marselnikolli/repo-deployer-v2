@@ -1,6 +1,6 @@
 """Clone queue service for batch repository cloning"""
 
-import asyncio
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional, Dict, Callable
@@ -60,6 +60,7 @@ class CloneQueueService:
         self.is_running = False
         self.worker_thread: Optional[threading.Thread] = None
         self.on_job_update: Optional[Callable[[CloneJob], None]] = None
+        self.db_session_factory: Optional[Callable] = None
         self._initialized = True
 
     def start(self):
@@ -142,6 +143,28 @@ class CloneQueueService:
         for job_id in to_remove:
             del self.jobs[job_id]
 
+    def _update_repository_cloned_status(self, repository_id: int, path: str):
+        """Update repository cloned status in database"""
+        if not self.db_session_factory:
+            print(f"Warning: No db_session_factory set, cannot update repository {repository_id}")
+            return
+
+        try:
+            from models import Repository
+            db = self.db_session_factory()
+            try:
+                repo = db.query(Repository).filter(Repository.id == repository_id).first()
+                if repo:
+                    repo.cloned = True
+                    repo.path = path
+                    repo.last_synced = datetime.utcnow()
+                    db.commit()
+                    print(f"Updated repository {repository_id} cloned status to True")
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"Error updating repository cloned status: {e}")
+
     def _worker_loop(self):
         """Main worker loop that processes clone jobs"""
         from services.git_service import clone_repo
@@ -150,7 +173,7 @@ class CloneQueueService:
             try:
                 # Check if we can process more jobs
                 if self.active_jobs >= self.max_concurrent:
-                    asyncio.sleep(0.5)
+                    time.sleep(0.5)
                     continue
 
                 # Get next job from queue (non-blocking)
@@ -181,6 +204,8 @@ class CloneQueueService:
                     if success:
                         job.status = CloneStatus.COMPLETED
                         job.progress = 100
+                        # Update database
+                        self._update_repository_cloned_status(job.repository_id, job.target_path)
                     else:
                         job.status = CloneStatus.FAILED
                         job.error_message = "Clone operation failed"

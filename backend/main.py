@@ -18,6 +18,7 @@ from models import Repository, Category
 from schemas import RepositorySchema, RepositoryCreate, RepositoryUpdate, BulkActionRequest, ImportResponse
 from services.bookmark_parser import parse_html_bookmarks, filter_github_urls, categorize_url
 from services.git_service import clone_repo, sync_repo, get_repo_info
+from services.clone_queue import clone_queue, CloneStatus
 # from services.docker_service import deploy_to_docker
 from crud import repository as repo_crud
 
@@ -350,16 +351,25 @@ async def sync_repository(
 @app.post("/api/repositories/{repo_id}/clone")
 async def clone_repository(
     repo_id: int,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
 ):
-    """Clone repository locally"""
+    """Clone repository locally using the clone queue"""
     repo = repo_crud.get_repository(db, repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
-    
-    background_tasks.add_task(clone_repo, repo.url, repo.path)
-    return {"message": f"Cloning {repo.name}..."}
+
+    if repo.cloned:
+        return {"message": f"{repo.name} is already cloned", "job_id": None}
+
+    # Use the clone queue for proper tracking and status updates
+    target_path = repo.path or f"./repos/{repo.name}"
+    job = clone_queue.add_job(
+        repository_id=repo.id,
+        name=repo.name,
+        url=repo.url,
+        target_path=target_path
+    )
+    return {"message": f"Cloning {repo.name}...", "job_id": job.id}
 
 
 # ============ DOCKER DEPLOYMENT ============
@@ -760,12 +770,10 @@ async def check_repository_health(
 # ============ CLONE QUEUE ENDPOINTS ============
 
 
-from services.clone_queue import clone_queue, CloneStatus
-
-
 @app.on_event("startup")
 async def start_clone_queue():
     """Start the clone queue worker on app startup"""
+    clone_queue.db_session_factory = SessionLocal
     clone_queue.start()
 
 

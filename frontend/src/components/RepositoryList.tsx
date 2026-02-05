@@ -11,11 +11,13 @@ import {
   ArrowUp,
   ArrowDown,
   Download,
-  Info,
+  Eye,
   Keyboard,
+  GitBranch,
+  Loader2,
 } from 'lucide-react'
 import { useRepositoryStore } from '@/store/useRepositoryStore'
-import { repositoryApi, bulkApi, generalApi, searchApi, exportApi } from '@/api/client'
+import { repositoryApi, bulkApi, generalApi, searchApi, exportApi, cloneQueueApi } from '@/api/client'
 import { cx } from '@/utils/cx'
 import toast from 'react-hot-toast'
 import { RepositoryDetails } from './RepositoryDetails'
@@ -81,12 +83,57 @@ export function RepositoryList() {
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
   const [focusedIndex, setFocusedIndex] = useState<number>(-1)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [cloneJobs, setCloneJobs] = useState<any[]>([])
+  const [isCloning, setIsCloning] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const clonePollingRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     fetchRepositories()
     fetchCategories()
   }, [currentPage, filterCategory, filterCloned, filterDeployed, sortBy, sortOrder])
+
+  // Poll for clone job status
+  useEffect(() => {
+    if (isCloning) {
+      clonePollingRef.current = setInterval(async () => {
+        try {
+          const response = await cloneQueueApi.jobs()
+          const jobs = response.data
+          setCloneJobs(jobs)
+
+          // Check for newly completed jobs
+          const completedJobs = jobs.filter((j: any) => j.status === 'completed')
+          const failedJobs = jobs.filter((j: any) => j.status === 'failed')
+          const pendingOrInProgress = jobs.filter((j: any) =>
+            j.status === 'pending' || j.status === 'in_progress'
+          )
+
+          // If all jobs are done, stop polling and refresh
+          if (pendingOrInProgress.length === 0 && jobs.length > 0) {
+            setIsCloning(false)
+            if (completedJobs.length > 0) {
+              toast.success(`Cloned ${completedJobs.length} repositories successfully!`)
+            }
+            if (failedJobs.length > 0) {
+              toast.error(`${failedJobs.length} repositories failed to clone`)
+            }
+            fetchRepositories()
+            await cloneQueueApi.clear()
+            setCloneJobs([])
+          }
+        } catch (error) {
+          console.error('Error polling clone jobs:', error)
+        }
+      }, 1500)
+    }
+
+    return () => {
+      if (clonePollingRef.current) {
+        clearInterval(clonePollingRef.current)
+      }
+    }
+  }, [isCloning])
 
   // debounce search
   useEffect(() => {
@@ -152,7 +199,8 @@ export function RepositoryList() {
   const fetchCategories = async () => {
     try {
       const response = await generalApi.categories()
-      setCategories(response.data.map((c: { name: string }) => c.name))
+      const names = response.data.map((c: { category: string }) => c.category).filter(Boolean)
+      setCategories([...new Set(names)])
     } catch {
       // Fallback categories
       setCategories(['security', 'ci_cd', 'database', 'devops', 'api', 'frontend', 'backend', 'ml_ai', 'other'])
@@ -194,6 +242,29 @@ export function RepositoryList() {
       fetchRepositories()
     } catch {
       toast.error('Failed to update category')
+    }
+  }
+
+  const handleBulkClone = async () => {
+    if (selectedIds.size === 0) return
+
+    // Filter to only non-cloned repos
+    const reposToClone = repositories.filter(
+      (repo) => selectedIds.has(repo.id) && !repo.cloned
+    )
+
+    if (reposToClone.length === 0) {
+      toast.error('All selected repositories are already cloned')
+      return
+    }
+
+    try {
+      const response = await cloneQueueApi.add(reposToClone.map((r) => r.id))
+      toast.success(`Started cloning ${response.data.jobs_added} repositories`)
+      setIsCloning(true)
+      clearSelection()
+    } catch {
+      toast.error('Failed to start cloning')
     }
   }
 
@@ -386,7 +457,7 @@ export function RepositoryList() {
             className="px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 hover:border-[var(--color-brand-300)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)]"
           >
             <option value="" className="text-[var(--color-fg-primary)] dark:text-gray-100">All Categories</option>
-            {categories.map((cat) => (
+            {categories.filter(Boolean).map((cat) => (
               <option key={cat} value={cat} className="text-[var(--color-fg-primary)] dark:text-gray-100">
                 {cat}
               </option>
@@ -501,6 +572,18 @@ export function RepositoryList() {
               Change Category
             </button>
             <button
+              onClick={handleBulkClone}
+              disabled={isCloning}
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-success-700)] bg-white border border-[var(--color-success-300)] rounded-[var(--radius-md)] hover:bg-[var(--color-success-50)] transition-colors disabled:opacity-50"
+            >
+              {isCloning ? (
+                <Loader2 className="size-4 inline mr-1 animate-spin" />
+              ) : (
+                <GitBranch className="size-4 inline mr-1" />
+              )}
+              Clone
+            </button>
+            <button
               onClick={handleBulkDelete}
               className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-error-700)] bg-white border border-[var(--color-error-300)] rounded-[var(--radius-md)] hover:bg-[var(--color-error-50)] transition-colors"
             >
@@ -513,6 +596,41 @@ export function RepositoryList() {
             >
               Clear
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Clone Progress Indicator */}
+      {isCloning && cloneJobs.length > 0 && (
+        <div className="bg-[var(--color-success-50)] border border-[var(--color-success-200)] rounded-[var(--radius-lg)] p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Loader2 className="size-5 text-[var(--color-success-600)] animate-spin" />
+              <span className="text-[length:var(--text-sm)] font-medium text-[var(--color-success-800)]">
+                Cloning repositories...
+              </span>
+            </div>
+            <span className="text-[length:var(--text-sm)] text-[var(--color-success-700)]">
+              {cloneJobs.filter((j) => j.status === 'completed').length} / {cloneJobs.length} completed
+            </span>
+          </div>
+          <div className="w-full bg-[var(--color-success-100)] rounded-full h-2">
+            <div
+              className="bg-[var(--color-success-500)] h-2 rounded-full transition-all duration-300"
+              style={{
+                width: `${(cloneJobs.filter((j) => j.status === 'completed').length / cloneJobs.length) * 100}%`,
+              }}
+            />
+          </div>
+          <div className="mt-2 space-y-1">
+            {cloneJobs
+              .filter((j) => j.status === 'in_progress')
+              .map((job) => (
+                <div key={job.id} className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-success-700)]">
+                  <Loader2 className="size-3 animate-spin" />
+                  <span>Cloning {job.repository_name}...</span>
+                </div>
+              ))}
           </div>
         </div>
       )}
@@ -576,7 +694,7 @@ export function RepositoryList() {
               <tbody className="divide-y divide-[var(--color-border-secondary)]">
                 {repositories?.filter(repo => repo != null).map((repo: Repository, index: number) => (
                   <tr
-                    key={repo?.id || Math.random()}
+                    key={repo.id}
                     className={cx(
                       'hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer',
                       selectedIds.has(repo?.id) && 'bg-[var(--color-brand-25)]',
@@ -612,10 +730,11 @@ export function RepositoryList() {
                             e.stopPropagation()
                             setSelectedRepo(repo)
                           }}
-                          className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-fg-quaternary)] hover:text-[var(--color-fg-secondary)]"
+                          className="px-2 py-1 rounded-[var(--radius-md)] text-[length:var(--text-xs)] font-medium text-[var(--color-brand-600)] bg-[var(--color-brand-50)] hover:bg-[var(--color-brand-100)] border border-[var(--color-brand-200)] transition-colors flex items-center gap-1"
                           title="View details"
                         >
-                          <Info className="size-4" />
+                          <Eye className="size-3" />
+                          View
                         </button>
                       </div>
                     </td>
@@ -744,7 +863,7 @@ export function RepositoryList() {
               className="w-full px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)] mb-4"
             >
               <option value="">Select a category</option>
-              {categories.map((cat) => (
+              {categories.filter(Boolean).map((cat) => (
                 <option key={cat} value={cat}>
                   {cat.replace('_', ' ')}
                 </option>

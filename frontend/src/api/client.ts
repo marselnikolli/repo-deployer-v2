@@ -122,4 +122,22 @@ export const exportApi = {
     `${API_BASE}/export/markdown${category ? `?category=${category}` : ''}`,
 }
 
+// Clone queue endpoints
+export const cloneQueueApi = {
+  status: () =>
+    api.get('/clone-queue/status'),
+
+  jobs: () =>
+    api.get('/clone-queue/jobs'),
+
+  add: (repositoryIds: number[]) =>
+    api.post('/clone-queue/add', repositoryIds),
+
+  cancel: (jobId: number) =>
+    api.post(`/clone-queue/cancel/${jobId}`),
+
+  clear: () =>
+    api.post('/clone-queue/clear'),
+}
+
 export default api
