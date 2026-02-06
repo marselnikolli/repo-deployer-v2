@@ -552,3 +552,115 @@ class ImportService:
             elif status == 'completed' or status == 'failed':
                 job.completed_at = datetime.utcnow()
             self.db.commit()
+    
+    # ============ Post-Import Scanning ============
+    def scan_and_cleanup_imported(self, job_id: int) -> Dict[str, Any]:
+        """
+        Scan all repositories imported in a job and remove those with 404 errors.
+        Also updates metadata for valid repositories.
+        
+        Returns:
+            Dict with counts of scanned, removed, and updated repositories
+        """
+        try:
+            import re
+            
+            # Get all repositories from this import job
+            imported_repos = self.db.query(ImportedRepository).filter_by(job_id=job_id).all()
+            
+            if not imported_repos:
+                return {'scanned': 0, 'removed': 0, 'updated': 0, 'errors': 0}
+            
+            scanned = 0
+            removed = 0
+            updated = 0
+            errors = 0
+            
+            for import_record in imported_repos:
+                if not import_record.repository_id:
+                    continue
+                
+                repo = self.db.query(Repository).filter_by(id=import_record.repository_id).first()
+                if not repo:
+                    continue
+                
+                scanned += 1
+                
+                try:
+                    # Extract GitHub owner and repo name from URL
+                    url = repo.url.rstrip('/')
+                    if url.endswith('.git'):
+                        url = url[:-4]
+                    
+                    # Parse GitHub URL
+                    https_match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
+                    ssh_match = re.search(r'git@github\.com:([^/]+)/([^/]+)', url)
+                    
+                    if https_match:
+                        owner, repo_name = https_match.group(1), https_match.group(2)
+                    elif ssh_match:
+                        owner, repo_name = ssh_match.group(1), ssh_match.group(2)
+                    else:
+                        # Non-GitHub URL, skip
+                        continue
+                    
+                    # Call GitHub API
+                    api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+                    response = requests.get(api_url, timeout=10)
+                    
+                    if response.status_code == 404:
+                        # Repository not found - remove it
+                        logger.info(f"Removing repository {repo.name} (404 not found)")
+                        self.db.delete(repo)
+                        self.db.delete(import_record)
+                        removed += 1
+                    elif response.status_code == 200:
+                        # Repository exists - update metadata
+                        data = response.json()
+                        repo.archived = data.get('archived', False)
+                        repo.stars = data.get('stargazers_count', 0)
+                        repo.forks = data.get('forks_count', 0)
+                        repo.watchers = data.get('watchers_count', 0)
+                        repo.language = data.get('language')
+                        repo.topics = data.get('topics', [])
+                        repo.license = data.get('license', {}).get('name') if data.get('license') else None
+                        repo.is_fork = data.get('fork', False)
+                        repo.open_issues = data.get('open_issues_count', 0)
+                        repo.default_branch = data.get('default_branch', 'main')
+                        
+                        # Update timestamps
+                        if data.get('created_at'):
+                            from datetime import datetime as dt
+                            repo.github_created_at = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
+                        if data.get('updated_at'):
+                            from datetime import datetime as dt
+                            repo.github_updated_at = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
+                        if data.get('pushed_at'):
+                            from datetime import datetime as dt
+                            repo.github_pushed_at = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
+                        
+                        repo.health_status = 'healthy' if not data.get('archived') else 'archived'
+                        repo.last_health_check = datetime.utcnow()
+                        repo.last_metadata_sync = datetime.utcnow()
+                        updated += 1
+                    else:
+                        # Other API errors, log but keep repository
+                        logger.warning(f"API error for {repo.name}: {response.status_code}")
+                        errors += 1
+                
+                except Exception as e:
+                    logger.error(f"Error scanning repository {repo.name}: {str(e)}")
+                    errors += 1
+            
+            self.db.commit()
+            
+            return {
+                'scanned': scanned,
+                'removed': removed,
+                'updated': updated,
+                'errors': errors
+            }
+        
+        except Exception as e:
+            logger.error(f"Post-import scan failed: {str(e)}")
+            return {'scanned': 0, 'removed': 0, 'updated': 0, 'errors': 1, 'error': str(e)}

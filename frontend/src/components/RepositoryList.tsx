@@ -94,8 +94,12 @@ export function RepositoryList() {
   const [cloneJobs, setCloneJobs] = useState<any[]>([])
   const [isCloning, setIsCloning] = useState(false)
   const [isHealthChecking, setIsHealthChecking] = useState(false)
+  const [importJobs, setImportJobs] = useState<any[]>([])
+  const [autoCheckProgress, setAutoCheckProgress] = useState<{isRunning: boolean; current: number; total: number; status: string}>({isRunning: false, current: 0, total: 0, status: ''})
   const searchInputRef = useRef<HTMLInputElement>(null)
   const clonePollingRef = useRef<NodeJS.Timeout | null>(null)
+  const importPollingRef = useRef<NodeJS.Timeout | null>(null)
+  const previousImportJobsRef = useRef<any[]>([])
 
   useEffect(() => {
     fetchRepositories()
@@ -143,6 +147,50 @@ export function RepositoryList() {
       }
     }
   }, [isCloning])
+
+  // Poll for import jobs and auto-trigger health checks when complete
+  useEffect(() => {
+    // Only start polling if we have authentication
+    const token = localStorage.getItem('token')
+    if (!token) {
+      return
+    }
+
+    importPollingRef.current = setInterval(async () => {
+      try {
+        const response = await generalApi.importJobs()
+        const jobs = response.data || []
+        
+        // Track previous jobs to detect newly completed imports
+        const previousJobs = previousImportJobsRef.current
+        const wasImporting = previousJobs.some(j => j.status === 'running' || j.status === 'pending')
+        const nowRunning = jobs.some(j => j.status === 'running' || j.status === 'pending')
+        const justCompleted = wasImporting && !nowRunning && jobs.length > 0
+        
+        // Update the ref with current jobs
+        previousImportJobsRef.current = jobs
+        setImportJobs(jobs)
+        
+        // Auto-trigger health check when import completes
+        if (justCompleted && !autoCheckProgress.isRunning) {
+          console.log('Import job completed! Triggering auto health check...')
+          toast.success('Import completed! Starting automatic health and metadata check...')
+          triggerAutoHealthCheck()
+        }
+      } catch (error: any) {
+        // Only log non-401 errors (401 means user not logged in)
+        if (error?.response?.status !== 401) {
+          console.error('Error polling import jobs:', error)
+        }
+      }
+    }, 2000)
+
+    return () => {
+      if (importPollingRef.current) {
+        clearInterval(importPollingRef.current)
+      }
+    }
+  }, [])
 
   // debounce search
   useEffect(() => {
@@ -296,6 +344,45 @@ export function RepositoryList() {
       toast.error('Failed to check health')
     } finally {
       setIsHealthChecking(false)
+    }
+  }
+
+  const triggerAutoHealthCheck = async () => {
+    try {
+      setAutoCheckProgress({isRunning: true, current: 0, total: 0, status: 'Fetching repositories...'})
+      
+      // Fetch all repositories to get all IDs
+      const allReposResponse = await repositoryApi.list(undefined, 0, 10000)
+      const allRepos = allReposResponse.data || []
+      const totalToCheck = allRepos.length
+      
+      if (totalToCheck === 0) {
+        setAutoCheckProgress({isRunning: false, current: 0, total: 0, status: 'No repositories to check'})
+        return
+      }
+      
+      setAutoCheckProgress({isRunning: true, current: 0, total: totalToCheck, status: 'Starting health checks...'})
+      
+      // Get all repo IDs
+      const allIds = allRepos.map(r => r.id)
+      
+      // Perform bulk health check
+      const response = await bulkApi.healthCheck(allIds)
+      setAutoCheckProgress({isRunning: true, current: totalToCheck, total: totalToCheck, status: 'Health checks complete, syncing metadata...'})
+      
+      // Fetch fresh data
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      fetchRepositories()
+      
+      toast.success(
+        `✓ Auto-check complete: ${response.data.healthy} healthy, ${response.data.not_found} removed (404), ${response.data.archived} archived`
+      )
+      
+      setAutoCheckProgress({isRunning: false, current: 0, total: 0, status: ''})
+    } catch (error) {
+      console.error('Error during auto health check:', error)
+      setAutoCheckProgress({isRunning: false, current: 0, total: 0, status: ''})
+      toast.error('Auto health check failed')
     }
   }
 
@@ -686,9 +773,36 @@ export function RepositoryList() {
         </div>
       ) : (
         <>
+          {/* Auto-check progress indicator */}
+          {autoCheckProgress.isRunning && (
+            <div className="mb-4 bg-[var(--color-info-50)] border border-[var(--color-info-200)] rounded-[var(--radius-lg)] p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <p className="text-[length:var(--text-sm)] font-semibold text-[var(--color-info-700)] mb-2">
+                    {autoCheckProgress.status}
+                  </p>
+                  <div className="w-full bg-[var(--color-info-200)] rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-[var(--color-info-600)] h-full transition-all duration-300 ease-out"
+                      style={{
+                        width: autoCheckProgress.total > 0 ? `${(autoCheckProgress.current / autoCheckProgress.total) * 100}%` : '0%'
+                      }}
+                    />
+                  </div>
+                  {autoCheckProgress.total > 0 && (
+                    <p className="text-[length:var(--text-xs)] text-[var(--color-info-700)] mt-2">
+                      {autoCheckProgress.current} of {autoCheckProgress.total} completed
+                    </p>
+                  )}
+                </div>
+                <Loader2 className="size-5 text-[var(--color-info-600)] flex-shrink-0 animate-spin" />
+              </div>
+            </div>
+          )}
+
           {/* Table */}
-          <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-[var(--shadow-sm)] border border-[var(--color-border-secondary)] overflow-hidden">
-            <table className="w-full">
+          <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-[var(--shadow-sm)] border border-[var(--color-border-secondary)] overflow-x-auto">
+            <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)]">
                   <th className="w-12 px-4 py-3">
@@ -699,20 +813,18 @@ export function RepositoryList() {
                       className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
                     />
                   </th>
-                  <th
-                    className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none"
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none min-w-[200px] max-w-[320px]"
                     onClick={() => handleSort('name')}
                   >
                     <span className="flex items-center gap-1">
-                      Name
+                      Repository
                       {getSortIcon('name')}
                     </span>
                   </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
-                    URL
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[120px]">
+                    Status
                   </th>
-                  <th
-                    className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none"
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none min-w-[100px]"
                     onClick={() => handleSort('category')}
                   >
                     <span className="flex items-center gap-1">
@@ -720,23 +832,14 @@ export function RepositoryList() {
                       {getSortIcon('category')}
                     </span>
                   </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
-                    Status
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[80px]">
+                    Cloned
                   </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[150px]">
                     Metadata
                   </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[100px]">
                     Health
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none"
-                    onClick={() => handleSort('created_at')}
-                  >
-                    <span className="flex items-center gap-1">
-                      Added
-                      {getSortIcon('created_at')}
-                    </span>
                   </th>
                 </tr>
               </thead>
@@ -764,22 +867,34 @@ export function RepositoryList() {
                         className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
                       />
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                    <td className="px-4 py-3 min-w-[200px] max-w-[320px]">
+                      <div className="flex items-start gap-2">
                         <div className="flex-1 min-w-0">
                           <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">
                             {repo?.name || 'Unknown'}
                           </p>
-                          <p className="text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] truncate max-w-xs">
-                            {repo?.title || 'No title'}
-                          </p>
+                          {repo?.title && (
+                            <p className="text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] truncate">
+                              {repo.title}
+                            </p>
+                          )}
+                          <a
+                            href={repo?.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] truncate mt-1"
+                            title={repo?.url || 'No URL'}
+                          >
+                            <ExternalLink className="size-3 flex-shrink-0" />
+                            <span className="truncate">{cleanUrl(repo?.url) || 'No URL'}</span>
+                          </a>
                         </div>
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             setSelectedRepo(repo)
                           }}
-                          className="px-2 py-1 rounded-[var(--radius-md)] text-[length:var(--text-xs)] font-medium text-[var(--color-brand-600)] bg-[var(--color-brand-50)] hover:bg-[var(--color-brand-100)] border border-[var(--color-brand-200)] transition-colors flex items-center gap-1"
+                          className="px-2 py-1 rounded-[var(--radius-md)] text-[length:var(--text-xs)] font-medium text-[var(--color-brand-600)] bg-[var(--color-brand-50)] hover:bg-[var(--color-brand-100)] border border-[var(--color-brand-200)] transition-colors flex items-center gap-1 flex-shrink-0"
                           title="View details"
                         >
                           <Eye className="size-3" />
@@ -787,22 +902,7 @@ export function RepositoryList() {
                         </button>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <a
-                        href={repo?.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[length:var(--text-sm)] text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] max-w-xs truncate"
-                        title={repo?.url || 'No URL'}
-                      >
-                        <ExternalLink className="size-4 flex-shrink-0" />
-                        <span className="truncate">{cleanUrl(repo?.url) || 'No URL'}</span>
-                      </a>
-                    </td>
-                    <td className="px-4 py-3">
-                      <CategoryBadge category={repo?.category || 'uncategorized'} />
-                    </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 min-w-[120px]">
                       <div className="flex items-center gap-2">
                         {repo?.cloned && (
                           <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
@@ -823,7 +923,20 @@ export function RepositoryList() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 min-w-[100px]">
+                      <CategoryBadge category={repo?.category || 'uncategorized'} />
+                    </td>
+                    <td className="px-4 py-3 min-w-[80px]">
+                      {repo?.cloned ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
+                          <CheckCircle className="size-3" />
+                          Yes
+                        </span>
+                      ) : (
+                        <span className="text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)]">No</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 min-w-[150px]">
                       <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
                         {repo?.stars !== undefined && repo?.stars > 0 && (
                           <span className="inline-flex items-center gap-1">
@@ -847,7 +960,7 @@ export function RepositoryList() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 min-w-[100px]">
                       {repo?.health_status && (
                         <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] ${
                           repo.health_status === 'healthy' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
@@ -862,9 +975,6 @@ export function RepositoryList() {
                       {!repo?.health_status && (
                         <span className="text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)]">—</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)]">
-                      {repo?.created_at ? new Date(repo.created_at).toLocaleDateString() : '—'}
                     </td>
                   </tr>
                 ))}

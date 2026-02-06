@@ -9,6 +9,15 @@ const api = axios.create({
   }
 })
 
+// Add authorization interceptor
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
 // Repository endpoints
 export const repositoryApi = {
   list: (category?: string, skip = 0, limit = 100, sortBy?: string, sortOrder?: 'asc' | 'desc') =>
@@ -111,6 +120,9 @@ export const generalApi = {
 
   health: () =>
     api.get('/health'),
+  
+  importJobs: () =>
+    api.get('/imports/jobs'),
 }
 
 // Export endpoints

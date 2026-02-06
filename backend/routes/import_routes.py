@@ -136,6 +136,39 @@ async def get_import_job(
     return job
 
 
+@router.post("/jobs/{job_id}/scan")
+async def scan_and_cleanup_import(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Scan all repositories from an import job and remove those with 404 errors.
+    Also updates metadata (stars, forks, language, etc.) for valid repositories.
+    """
+    try:
+        service = ImportService(db)
+        
+        # Verify job belongs to current user
+        job = service.get_import_job(job_id, current_user.id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Import job not found")
+        
+        # Run the scan and cleanup
+        result = service.scan_and_cleanup_imported(job_id)
+        
+        return {
+            "job_id": job_id,
+            "scanned": result['scanned'],
+            "removed": result['removed'],
+            "updated": result['updated'],
+            "errors": result.get('errors', 0),
+            "message": f"Scanned {result['scanned']} repositories, removed {result['removed']} dead repos (404 errors), updated metadata for {result['updated']} repos"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============ GitHub Import Endpoints ============
 
 @router.post("/github/stars")
