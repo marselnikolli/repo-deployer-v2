@@ -198,53 +198,9 @@ class ScheduledTask(Base):
 
 class UserRole(str, enum.Enum):
     """User roles for RBAC"""
-    ADMIN = "admin"  # Full access to team, all operations
-    EDITOR = "editor"  # Can manage repositories, deployments, scheduling
+    ADMIN = "admin"  # Full access 
+    EDITOR = "editor"  # Can manage repositories, deployments
     VIEWER = "viewer"  # Read-only access
-
-
-class Team(Base):
-    """Team/Organization model"""
-    __tablename__ = "teams"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False, index=True)
-    slug = Column(String(100), unique=True, index=True)  # URL-friendly identifier
-    description = Column(String(512), nullable=True)
-    owner_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    logo_url = Column(String(512), nullable=True)
-    settings = Column(JSON, nullable=True)  # Team settings like notifications, defaults
-    is_public = Column(Boolean, default=False)  # Public team visibility
-    max_members = Column(Integer, default=50)
-    max_repositories = Column(Integer, default=1000)
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Relationships
-    members = relationship("TeamMember", back_populates="team", cascade="all, delete-orphan")
-
-    def __repr__(self):
-        return f"<Team {self.slug}>"
-
-
-class TeamMember(Base):
-    """Team membership model"""
-    __tablename__ = "team_members"
-
-    id = Column(Integer, primary_key=True, index=True)
-    team_id = Column(Integer, ForeignKey('teams.id', ondelete='CASCADE'), index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), index=True)
-    role = Column(String(50), default=UserRole.VIEWER)  # admin, editor, viewer
-    joined_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Relationships
-    team = relationship("Team", back_populates="members")
-    user = relationship("User")
-
-    def __repr__(self):
-        return f"<TeamMember {self.user_id} in {self.team_id}>"
 
 
 class NotificationType(str, enum.Enum):
@@ -358,7 +314,6 @@ class Collection(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), index=True)
-    team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), nullable=True, index=True)
     
     name = Column(String(255), nullable=False)
     description = Column(String(2048), nullable=True)

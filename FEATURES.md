@@ -53,7 +53,14 @@ A comprehensive platform for discovering, managing, and deploying repositories w
 - **Deployment Instructions** - Step-by-step guides extracted from README files
 - **Configuration Details** - Database setup, API key configuration, etc.
 
-###  Notifications & Alerts
+### 👥 Team & Collaboration
+- **Team Management** - ✅ Create and manage teams
+- **Team Collections** - Organize repositories by team projects
+- **Member Roles** - Role-based access control (Admin, Member, Viewer)
+- **Team Members** - ✅ Add and manage team members with roles
+- **Activity Tracking** - Audit logs of team actions
+
+### 🔔 Notifications & Alerts
 - **Real-Time Notifications** - Get notified about:
   - Clone queue progress
   - Deployment status changes
@@ -141,6 +148,7 @@ A comprehensive platform for discovering, managing, and deploying repositories w
 - ✅ Real-time notifications and updates
 - ✅ Concurrent deployments
 - ✅ Scalable architecture
+- ✅ Multi-team support
 - ✅ Comprehensive audit logging
 - ✅ Health monitoring
 - ✅ Automated backup support

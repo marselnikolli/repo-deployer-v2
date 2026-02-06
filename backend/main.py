@@ -22,7 +22,7 @@ from services.git_service import clone_repo, sync_repo, get_repo_info
 from services.clone_queue import clone_queue, CloneStatus
 # from services.docker_service import deploy_to_docker
 from crud import repository as repo_crud
-from routes import auth, docker, deployment, analytics, scheduler, notifications, search, team, import_routes, collection_routes
+from routes import auth, docker, deployment, analytics, scheduler, notifications, search, import_routes, collection_routes
 
 logger = logging.getLogger(__name__)
 
@@ -85,22 +85,6 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             db.rollback()
             print(f"Notifications migration already applied: {e}")
-        
-        # Migration 4: Teams
-        try:
-            with open('migrations/004_add_teams_tables.sql', 'r') as f:
-                migration_sql = f.read()
-                for statement in migration_sql.split(';'):
-                    statement = statement.strip()
-                    if statement and not statement.startswith('--'):
-                        try:
-                            db.execute(text(statement))
-                        except Exception as stmt_err:
-                            pass  # Skip if table already exists
-                db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Teams migration already applied: {e}")
         
         # Migration 5: Import Sources
         try:
@@ -172,7 +156,6 @@ app.include_router(analytics.router)
 app.include_router(scheduler.router)
 app.include_router(notifications.router)
 app.include_router(search.router)
-app.include_router(team.router)
 app.include_router(import_routes.router)
 app.include_router(collection_routes.router)
 
