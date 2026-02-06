@@ -11,6 +11,15 @@ const apiClient = axios.create({
   }
 });
 
+// Add authorization token to all requests
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 interface ImportJob {
   id: number;
   source_type: string;
