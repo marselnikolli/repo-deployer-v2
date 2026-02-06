@@ -15,6 +15,9 @@ import {
   Keyboard,
   GitBranch,
   Loader2,
+  Heart,
+  Star,
+  GitFork,
 } from 'lucide-react'
 import { useRepositoryStore } from '@/store/useRepositoryStore'
 import { repositoryApi, bulkApi, generalApi, searchApi, exportApi, cloneQueueApi } from '@/api/client'
@@ -53,6 +56,11 @@ interface Repository {
   deployed: boolean
   created_at?: string
   updated_at?: string
+  stars?: number
+  forks?: number
+  language?: string
+  health_status?: string
+  last_health_check?: string
 }
 
 export function RepositoryList() {
@@ -85,6 +93,7 @@ export function RepositoryList() {
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [cloneJobs, setCloneJobs] = useState<any[]>([])
   const [isCloning, setIsCloning] = useState(false)
+  const [isHealthChecking, setIsHealthChecking] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const clonePollingRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -269,6 +278,24 @@ export function RepositoryList() {
       clearSelection()
     } catch {
       toast.error('Failed to start cloning')
+    }
+  }
+
+  const handleBulkHealthCheck = async () => {
+    if (selectedIds.size === 0) return
+
+    try {
+      setIsHealthChecking(true)
+      const response = await bulkApi.healthCheck(Array.from(selectedIds))
+      toast.success(
+        `Health check completed: ${response.data.healthy} healthy, ${response.data.archived} archived, ${response.data.not_found} not found`
+      )
+      clearSelection()
+      fetchRepositories()
+    } catch {
+      toast.error('Failed to check health')
+    } finally {
+      setIsHealthChecking(false)
     }
   }
 
@@ -588,6 +615,18 @@ export function RepositoryList() {
               Clone
             </button>
             <button
+              onClick={handleBulkHealthCheck}
+              disabled={isHealthChecking}
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-info-700)] dark:text-[var(--color-info-400)] bg-[var(--color-info-50)] dark:bg-[var(--color-info-900)] border border-[var(--color-info-300)] dark:border-[var(--color-info-700)] rounded-[var(--radius-md)] hover:bg-[var(--color-info-100)] dark:hover:bg-[var(--color-info-800)] transition-colors disabled:opacity-50"
+            >
+              {isHealthChecking ? (
+                <Loader2 className="size-4 inline mr-1 animate-spin" />
+              ) : (
+                <Heart className="size-4 inline mr-1" />
+              )}
+              Health Check
+            </button>
+            <button
               onClick={handleBulkDelete}
               className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-error-700)] dark:text-[var(--color-error-400)] bg-[var(--color-error-50)] dark:bg-[var(--color-error-900)] border border-[var(--color-error-300)] dark:border-[var(--color-error-700)] rounded-[var(--radius-md)] hover:bg-[var(--color-error-100)] dark:hover:bg-[var(--color-error-800)] transition-colors"
             >
@@ -684,6 +723,12 @@ export function RepositoryList() {
                   <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
                     Status
                   </th>
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
+                    Metadata
+                  </th>
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider">
+                    Health
+                  </th>
                   <th
                     className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none"
                     onClick={() => handleSort('created_at')}
@@ -777,6 +822,46 @@ export function RepositoryList() {
                           </span>
                         )}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
+                        {repo?.stars !== undefined && repo?.stars > 0 && (
+                          <span className="inline-flex items-center gap-1">
+                            <Star className="size-3 text-yellow-500" />
+                            {repo.stars}
+                          </span>
+                        )}
+                        {repo?.forks !== undefined && repo?.forks > 0 && (
+                          <span className="inline-flex items-center gap-1">
+                            <GitFork className="size-3 text-[var(--color-fg-tertiary)]" />
+                            {repo.forks}
+                          </span>
+                        )}
+                        {repo?.language && (
+                          <span className="px-2 py-1 bg-[var(--color-bg-secondary)] rounded-[var(--radius-sm)]">
+                            {repo.language}
+                          </span>
+                        )}
+                        {!repo?.language && (!repo?.stars || repo.stars === 0) && (!repo?.forks || repo.forks === 0) && (
+                          <span className="text-[var(--color-fg-quaternary)]">—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {repo?.health_status && (
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] ${
+                          repo.health_status === 'healthy' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                          repo.health_status === 'archived' ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' :
+                          repo.health_status === 'not_found' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
+                          'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                        }`}>
+                          <Heart className="size-3" />
+                          {repo.health_status}
+                        </span>
+                      )}
+                      {!repo?.health_status && (
+                        <span className="text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)]">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)]">
                       {repo?.created_at ? new Date(repo.created_at).toLocaleDateString() : '—'}

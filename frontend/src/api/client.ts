@@ -96,6 +96,9 @@ export const bulkApi = {
   
   delete: (ids: number[]) =>
     api.post('/bulk/delete', { repository_ids: ids }),
+  
+  healthCheck: (ids: number[]) =>
+    api.post('/bulk/health-check', { repository_ids: ids }),
 }
 
 // General endpoints

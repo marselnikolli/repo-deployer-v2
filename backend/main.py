@@ -517,6 +517,48 @@ async def bulk_delete(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/bulk/health-check")
+async def bulk_health_check(
+    action: BulkActionRequest,
+    db: Session = Depends(get_db)
+):
+    """Check health status of multiple repositories"""
+    try:
+        from datetime import datetime
+        
+        repos = db.query(Repository).filter(Repository.id.in_(action.repository_ids)).all()
+        
+        healthy_count = 0
+        archived_count = 0
+        not_found_count = 0
+        
+        for repo in repos:
+            # Determine health status
+            if repo.archived:
+                repo.health_status = "archived"
+                archived_count += 1
+            elif not repo.github_created_at:
+                repo.health_status = "not_found"
+                not_found_count += 1
+            else:
+                repo.health_status = "healthy"
+                healthy_count += 1
+            
+            repo.last_health_check = datetime.utcnow()
+        
+        db.commit()
+        
+        return {
+            "message": f"Health check completed for {len(repos)} repositories",
+            "healthy": healthy_count,
+            "archived": archived_count,
+            "not_found": not_found_count,
+            "total": len(repos)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # ============ GIT OPERATIONS ============
 
 @app.post("/api/repositories/{repo_id}/sync")
