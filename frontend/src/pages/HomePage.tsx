@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Tabs, TabList, Tab, TabPanel } from 'react-aria-components'
 import { useNavigate } from 'react-router-dom'
-import { BarChart3, Download, Package, LogOut, Plus, Anchor, Settings, Search } from 'lucide-react'
+import { BarChart3, Download, Package, LogOut, Plus, Anchor, Settings, Search, Users } from 'lucide-react'
 import { Dashboard } from '@/components/Dashboard'
 import { ImportBookmarks } from '@/components/ImportBookmarks'
 import { RepositoryList } from '@/components/RepositoryList'
 import { AddRepository } from '@/components/AddRepository'
 import { NotificationCenter } from '@/components/NotificationCenter'
 import { DeploymentPage } from '@/pages/DeploymentPage'
+import TeamsPage from '@/pages/TeamsPage'
 import { useTheme } from '@/providers/theme-provider'
 import { useAuth } from '@/contexts/AuthContext'
 import { cx } from '@/utils/cx'
@@ -149,6 +150,20 @@ export function HomePage() {
                 <Anchor className="size-5" />
                 Deploy
               </Tab>
+              <Tab
+                id="teams"
+                className={({ isSelected }) =>
+                  cx(
+                    'flex items-center gap-2 px-1 py-4 text-[length:var(--text-sm)] font-medium border-b-2 transition-colors outline-none cursor-pointer',
+                    isSelected
+                      ? 'border-[var(--color-brand-500)] text-[var(--color-brand-600)]'
+                      : 'border-transparent text-[var(--color-fg-quaternary)] hover:text-[var(--color-fg-secondary)] hover:border-[var(--color-border-primary)]'
+                  )
+                }
+              >
+                <Users className="size-5" />
+                Teams
+              </Tab>
             </TabList>
           </div>
         </nav>
@@ -168,6 +183,9 @@ export function HomePage() {
           </TabPanel>
           <TabPanel id="deploy">
             <DeploymentPage />
+          </TabPanel>
+          <TabPanel id="teams">
+            <TeamsPage />
           </TabPanel>
         </main>
       </Tabs>
