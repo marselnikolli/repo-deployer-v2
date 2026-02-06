@@ -2,8 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json ./
+# Copy package files (and lock file if it exists)
+COPY package.json package-lock.json ./
 
 # Install dependencies
 RUN npm install --legacy-peer-deps

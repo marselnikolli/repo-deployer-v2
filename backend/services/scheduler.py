@@ -154,8 +154,11 @@ class SchedulerService:
             healthy_count = 0
             archived_count = 0
             not_found_count = 0
+            repo_updates = []  # Batch updates for bulk insertion
             
             for repo in repos:
+                repo_update = {"id": repo.id}
+                
                 try:
                     # Parse GitHub URL to extract owner and repo name
                     url = repo.url.rstrip('/')
@@ -172,8 +175,9 @@ class SchedulerService:
                         owner, repo_name = ssh_match.group(1), ssh_match.group(2)
                     else:
                         # Not a GitHub URL, mark as unknown
-                        repo.health_status = "unknown"
-                        repo.last_health_check = datetime.utcnow()
+                        repo_update["health_status"] = "unknown"
+                        repo_update["last_health_check"] = datetime.utcnow()
+                        repo_updates.append(repo_update)
                         continue
                     
                     # Call GitHub API to check repository status
@@ -185,51 +189,56 @@ class SchedulerService:
                         data = response.json()
                         
                         # Update repository metadata
-                        repo.archived = data.get('archived', False)
-                        repo.stars = data.get('stargazers_count', 0)
-                        repo.forks = data.get('forks_count', 0)
-                        repo.watchers = data.get('watchers_count', 0)
-                        repo.language = data.get('language')
-                        repo.topics = data.get('topics', [])
-                        repo.license = data.get('license', {}).get('name') if data.get('license') else None
-                        repo.is_fork = data.get('fork', False)
-                        repo.open_issues = data.get('open_issues_count', 0)
-                        repo.default_branch = data.get('default_branch', 'main')
+                        repo_update.update({
+                            "archived": data.get('archived', False),
+                            "stars": data.get('stargazers_count', 0),
+                            "forks": data.get('forks_count', 0),
+                            "watchers": data.get('watchers_count', 0),
+                            "language": data.get('language'),
+                            "topics": data.get('topics', []),
+                            "license": data.get('license', {}).get('name') if data.get('license') else None,
+                            "is_fork": data.get('fork', False),
+                            "open_issues": data.get('open_issues_count', 0),
+                            "default_branch": data.get('default_branch', 'main'),
+                            "last_metadata_sync": datetime.utcnow()
+                        })
                         
                         if data.get('created_at'):
                             from datetime import datetime as dt
-                            repo.github_created_at = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
+                            repo_update["github_created_at"] = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
                         if data.get('updated_at'):
                             from datetime import datetime as dt
-                            repo.github_updated_at = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
+                            repo_update["github_updated_at"] = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
                         if data.get('pushed_at'):
                             from datetime import datetime as dt
-                            repo.github_pushed_at = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
-                        
-                        repo.last_metadata_sync = datetime.utcnow()
+                            repo_update["github_pushed_at"] = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
                         
                         # Set health status
                         if data.get('archived'):
-                            repo.health_status = "archived"
+                            repo_update["health_status"] = "archived"
                             archived_count += 1
                         else:
-                            repo.health_status = "healthy"
+                            repo_update["health_status"] = "healthy"
                             healthy_count += 1
                     
                     elif response.status_code == 404:
                         # Repository not found
-                        repo.health_status = "not_found"
+                        repo_update["health_status"] = "not_found"
                         not_found_count += 1
                     else:
                         # Other API error, keep existing status
-                        repo.health_status = "unknown"
+                        repo_update["health_status"] = "unknown"
                     
                 except Exception as e:
-                    logger.error(f"Error checking repository {repo.name}: {e}")
-                    repo.health_status = "unknown"
+                    logger.error(f"Error checking repository {repo.id}: {e}")
+                    repo_update["health_status"] = "unknown"
                 
-                repo.last_health_check = datetime.utcnow()
+                repo_update["last_health_check"] = datetime.utcnow()
+                repo_updates.append(repo_update)
             
+            # Batch update all repositories at once
+            if repo_updates:
+                db.bulk_update_mappings(Repository, repo_updates)
             db.commit()
             
             return {

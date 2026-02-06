@@ -5,6 +5,7 @@ RESTful API for managing GitHub repository imports and deployments
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Query, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZIPMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -27,6 +28,37 @@ from routes import auth, docker, deployment, analytics, scheduler, notifications
 logger = logging.getLogger(__name__)
 
 
+def run_migration(db: Session, migration_number: int, migration_name: str):
+    """
+    Run a single migration file and handle errors gracefully.
+    
+    Args:
+        db: Database session
+        migration_number: Migration file number (e.g., 1 for 001_add_users_table.sql)
+        migration_name: Human-readable name for logging
+    """
+    try:
+        migration_file = f'migrations/{migration_number:03d}_{migration_name}.sql'
+        with open(migration_file, 'r') as f:
+            migration_sql = f.read()
+            # Split by semicolon but skip comments and empty lines
+            for statement in migration_sql.split(';'):
+                statement = statement.strip()
+                if statement and not statement.startswith('--'):
+                    try:
+                        db.execute(text(statement))
+                    except Exception as stmt_err:
+                        # Skip if table already exists or other idempotent errors
+                        logger.debug(f"Migration {migration_name} statement skipped: {stmt_err}")
+            db.commit()
+        logger.info(f"Migration {migration_number} ({migration_name}) completed successfully")
+    except FileNotFoundError:
+        logger.warning(f"Migration file {migration_number} not found: {migration_name}")
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Migration {migration_number} ({migration_name}) already applied or skipped: {e}")
+
+
 # Lifecycle management
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,89 +66,16 @@ async def lifespan(app: FastAPI):
     init_db()
     # Create all tables (including users table from updated models)
     Base.metadata.create_all(bind=engine)
+    
     # Run migrations
+    db = SessionLocal()
     try:
-        db = SessionLocal()
-        # Migration 1: Users table
-        try:
-            with open('migrations/001_add_users_table.sql', 'r') as f:
-                migration_sql = f.read()
-                # Split by semicolon but skip comments and empty lines
-                for statement in migration_sql.split(';'):
-                    statement = statement.strip()
-                    if statement and not statement.startswith('--'):
-                        try:
-                            db.execute(text(statement))
-                        except Exception as stmt_err:
-                            pass  # Skip if table already exists
-                db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Users migration already applied: {e}")
-        
-        # Migration 2: Scheduled tasks
-        try:
-            with open('migrations/002_add_scheduled_tasks_table.sql', 'r') as f:
-                migration_sql = f.read()
-                for statement in migration_sql.split(';'):
-                    statement = statement.strip()
-                    if statement and not statement.startswith('--'):
-                        try:
-                            db.execute(text(statement))
-                        except Exception as stmt_err:
-                            pass  # Skip if table already exists
-                db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Scheduled tasks migration already applied: {e}")
-        
-        # Migration 3: Notifications
-        try:
-            with open('migrations/003_add_notifications_table.sql', 'r') as f:
-                migration_sql = f.read()
-                for statement in migration_sql.split(';'):
-                    statement = statement.strip()
-                    if statement and not statement.startswith('--'):
-                        try:
-                            db.execute(text(statement))
-                        except Exception as stmt_err:
-                            pass  # Skip if table already exists
-                db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Notifications migration already applied: {e}")
-        
-        # Migration 5: Import Sources
-        try:
-            with open('migrations/005_add_import_sources_table.sql', 'r') as f:
-                migration_sql = f.read()
-                for statement in migration_sql.split(';'):
-                    statement = statement.strip()
-                    if statement and not statement.startswith('--'):
-                        try:
-                            db.execute(text(statement))
-                        except Exception as stmt_err:
-                            pass  # Skip if table already exists
-                db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Import sources migration already applied: {e}")
-        
-        # Migration 6: Deployments
-        try:
-            with open('migrations/006_add_deployments_table.sql', 'r') as f:
-                migration_sql = f.read()
-                for statement in migration_sql.split(';'):
-                    statement = statement.strip()
-                    if statement and not statement.startswith('--'):
-                        try:
-                            db.execute(text(statement))
-                        except Exception as stmt_err:
-                            pass  # Skip if table already exists
-                db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Deployments migration already applied: {e}")
+        run_migration(db, 1, "add_users_table")
+        run_migration(db, 2, "add_scheduled_tasks_table")
+        run_migration(db, 3, "add_notifications_table")
+        run_migration(db, 4, "add_teams_tables")
+        run_migration(db, 5, "add_import_sources_table")
+        run_migration(db, 6, "add_deployments_table")
     finally:
         db.close()
     
@@ -147,6 +106,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Gzip Compression Middleware
+app.add_middleware(GZIPMiddleware, minimum_size=1000)
 
 # Register route blueprints
 app.include_router(auth.router)
@@ -533,8 +495,11 @@ async def bulk_health_check(
         healthy_count = 0
         archived_count = 0
         not_found_count = 0
+        repo_updates = []  # Batch updates for bulk insertion
         
         for repo in repos:
+            repo_update = {"id": repo.id}
+            
             try:
                 # Parse GitHub URL to extract owner and repo name
                 url = repo.url.rstrip('/')
@@ -551,8 +516,9 @@ async def bulk_health_check(
                     owner, repo_name = ssh_match.group(1), ssh_match.group(2)
                 else:
                     # Not a GitHub URL, mark as unknown
-                    repo.health_status = "unknown"
-                    repo.last_health_check = datetime.utcnow()
+                    repo_update["health_status"] = "unknown"
+                    repo_update["last_health_check"] = datetime.utcnow()
+                    repo_updates.append(repo_update)
                     continue
                 
                 # Call GitHub API to check repository status
@@ -564,51 +530,56 @@ async def bulk_health_check(
                     data = response.json()
                     
                     # Update repository metadata
-                    repo.archived = data.get('archived', False)
-                    repo.stars = data.get('stargazers_count', 0)
-                    repo.forks = data.get('forks_count', 0)
-                    repo.watchers = data.get('watchers_count', 0)
-                    repo.language = data.get('language')
-                    repo.topics = data.get('topics', [])
-                    repo.license = data.get('license', {}).get('name') if data.get('license') else None
-                    repo.is_fork = data.get('fork', False)
-                    repo.open_issues = data.get('open_issues_count', 0)
-                    repo.default_branch = data.get('default_branch', 'main')
+                    repo_update.update({
+                        "archived": data.get('archived', False),
+                        "stars": data.get('stargazers_count', 0),
+                        "forks": data.get('forks_count', 0),
+                        "watchers": data.get('watchers_count', 0),
+                        "language": data.get('language'),
+                        "topics": data.get('topics', []),
+                        "license": data.get('license', {}).get('name') if data.get('license') else None,
+                        "is_fork": data.get('fork', False),
+                        "open_issues": data.get('open_issues_count', 0),
+                        "default_branch": data.get('default_branch', 'main'),
+                        "last_metadata_sync": datetime.utcnow()
+                    })
                     
                     if data.get('created_at'):
                         from datetime import datetime as dt
-                        repo.github_created_at = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
+                        repo_update["github_created_at"] = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
                     if data.get('updated_at'):
                         from datetime import datetime as dt
-                        repo.github_updated_at = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
+                        repo_update["github_updated_at"] = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
                     if data.get('pushed_at'):
                         from datetime import datetime as dt
-                        repo.github_pushed_at = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
-                    
-                    repo.last_metadata_sync = datetime.utcnow()
+                        repo_update["github_pushed_at"] = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
                     
                     # Set health status
                     if data.get('archived'):
-                        repo.health_status = "archived"
+                        repo_update["health_status"] = "archived"
                         archived_count += 1
                     else:
-                        repo.health_status = "healthy"
+                        repo_update["health_status"] = "healthy"
                         healthy_count += 1
                 
                 elif response.status_code == 404:
                     # Repository not found
-                    repo.health_status = "not_found"
+                    repo_update["health_status"] = "not_found"
                     not_found_count += 1
                 else:
                     # Other API error, keep existing status
-                    repo.health_status = "unknown"
+                    repo_update["health_status"] = "unknown"
                 
             except Exception as e:
-                logger.error(f"Error checking repository {repo.name}: {e}")
-                repo.health_status = "unknown"
+                logger.error(f"Error checking repository {repo.id}: {e}")
+                repo_update["health_status"] = "unknown"
             
-            repo.last_health_check = datetime.utcnow()
+            repo_update["last_health_check"] = datetime.utcnow()
+            repo_updates.append(repo_update)
         
+        # Batch update all repositories at once
+        if repo_updates:
+            db.bulk_update_mappings(Repository, repo_updates)
         db.commit()
         
         return {

@@ -49,10 +49,10 @@ class Repository(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, index=True)
-    url = Column(String(512), unique=True)
+    url = Column(String(512), unique=True, index=True)
     title = Column(String(2048))
     description = Column(String(4096), nullable=True)
-    category = Column(String(50), default=CategoryEnum.OTHER)
+    category = Column(String(50), default=CategoryEnum.OTHER, index=True)
     path = Column(String(512), nullable=True)
 
     # Status
@@ -78,11 +78,11 @@ class Repository(Base):
     last_metadata_sync = Column(DateTime, nullable=True)
 
     # Health status
-    health_status = Column(String(20), default="unknown")  # healthy, archived, not_found, unknown
-    last_health_check = Column(DateTime, nullable=True)
+    health_status = Column(String(20), default="unknown", index=True)  # healthy, archived, not_found, unknown
+    last_health_check = Column(DateTime, nullable=True, index=True)
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships

@@ -20,6 +20,15 @@ services:
       retries: 5
     networks:
       - repo-deployer-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # Redis Cache
   redis:
@@ -34,6 +43,15 @@ services:
       retries: 5
     networks:
       - repo-deployer-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     command: redis-server --appendonly yes
 
   # FastAPI Backend
@@ -51,6 +69,15 @@ services:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
       - mirrors:/app/mirrors
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
     ports:
       - "8000:8000"
     depends_on:
@@ -74,6 +101,15 @@ services:
       - api
     networks:
       - repo-deployer-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
     environment:
       REACT_APP_API_URL: http://api:8000
 

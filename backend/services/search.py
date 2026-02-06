@@ -106,22 +106,30 @@ class SearchService:
     
     @staticmethod
     def get_search_filters(db: Session) -> Dict[str, Any]:
-        """Get available filter options for search UI"""
-        languages = db.query(Repository.language).distinct().filter(
-            Repository.language.isnot(None)
-        ).all()
-        languages = sorted([lang[0] for lang in languages if lang[0]])
+        """Get available filter options for search UI - optimized with single query"""
+        # Get aggregate stats in one query
+        from sqlalchemy import func, case
         
-        categories = db.query(Repository.category).distinct().all()
-        categories = sorted([cat[0] for cat in categories if cat[0]])
+        stats = db.query(
+            func.min(Repository.stars).label('min_stars'),
+            func.max(Repository.stars).label('max_stars'),
+            func.array_agg(func.distinct(Repository.language)).filter(
+                Repository.language.isnot(None)
+            ).label('languages'),
+            func.array_agg(func.distinct(Repository.category)).filter(
+                Repository.category.isnot(None)
+            ).label('categories'),
+            func.array_agg(func.distinct(Repository.health_status)).filter(
+                Repository.health_status.isnot(None)
+            ).label('health_statuses')
+        ).first()
         
-        min_stars = db.query(func.min(Repository.stars)).scalar() or 0
-        max_stars = db.query(func.max(Repository.stars)).scalar() or 0
-        
-        health_statuses = db.query(Repository.health_status).distinct().filter(
-            Repository.health_status.isnot(None)
-        ).all()
-        health_statuses = [status[0] for status in health_statuses if status[0]]
+        # Extract and clean results
+        languages = sorted([lang for lang in (stats.languages or []) if lang])
+        categories = sorted([cat for cat in (stats.categories or []) if cat])
+        health_statuses = [status for status in (stats.health_statuses or []) if status]
+        min_stars = stats.min_stars or 0
+        max_stars = stats.max_stars or 0
         
         return {
             "languages": languages,

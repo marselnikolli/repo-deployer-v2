@@ -107,6 +107,33 @@ class CacheService:
         except Exception as e:
             print(f"Cache CLEAR_ALL error: {e}")
             return False
+    
+    @staticmethod
+    def get_repo_health(repo_id: int) -> Optional[dict]:
+        """Get cached repository health status"""
+        return CacheService.get(f"repo:health:{repo_id}")
+    
+    @staticmethod
+    def set_repo_health(repo_id: int, health_data: dict, ttl: int = 86400) -> bool:
+        """Cache repository health status (24 hours default)"""
+        return CacheService.set(f"repo:health:{repo_id}", health_data, ttl)
+    
+    @staticmethod
+    def get_repo_metadata(repo_id: int) -> Optional[dict]:
+        """Get cached repository metadata"""
+        return CacheService.get(f"repo:metadata:{repo_id}")
+    
+    @staticmethod
+    def set_repo_metadata(repo_id: int, metadata: dict, ttl: int = 86400) -> bool:
+        """Cache repository metadata (24 hours default)"""
+        return CacheService.set(f"repo:metadata:{repo_id}", metadata, ttl)
+    
+    @staticmethod
+    def invalidate_repo_cache(repo_id: int) -> bool:
+        """Invalidate all caches for a repository"""
+        CacheService.delete(f"repo:health:{repo_id}")
+        CacheService.delete(f"repo:metadata:{repo_id}")
+        return True
 
 
 def generate_search_cache_key(query: str, category: Optional[str] = None, 
