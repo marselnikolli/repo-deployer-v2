@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Lock, Mail, AlertCircle } from 'lucide-react';
+import { Lock, Mail, AlertCircle, Github, Chrome } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 
 interface LoginPageProps {
@@ -7,7 +8,8 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
-  const [username, setUsername] = useState('');
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -16,8 +18,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!username || !password) {
-      setError('Please enter both username and password');
+    if (!email || !password) {
+      setError('Please enter both email and password');
       return;
     }
 
@@ -25,12 +27,12 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       setLoading(true);
       setError(undefined);
 
-      const response = await api.login(username, password);
+      const response = await api.login(email, password);
       
       // Store token in localStorage
       localStorage.setItem('auth_token', response.access_token);
       localStorage.setItem('auth_type', response.token_type);
-      localStorage.setItem('username', username);
+      localStorage.setItem('username', email);
       
       setSuccess(true);
       
@@ -50,13 +52,33 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     }
   };
 
+  const handleGitHubLogin = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/auth/oauth/github/authorize');
+      const data = await response.json();
+      window.location.href = data.authorization_url;
+    } catch (err) {
+      setError('Failed to initiate GitHub login');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/auth/oauth/google/authorize');
+      const data = await response.json();
+      window.location.href = data.authorization_url;
+    } catch (err) {
+      setError('Failed to initiate Google login');
+    }
+  };
+
   if (success) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full text-center">
           <div className="text-green-600 text-4xl mb-4">✓</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Login Successful!</h2>
-          <p className="text-gray-600">Welcome, {username}!</p>
+          <p className="text-gray-600">Welcome back!</p>
           <p className="text-sm text-gray-500 mt-2">Redirecting...</p>
         </div>
       </div>
@@ -77,19 +99,19 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
         {/* Form */}
         <form onSubmit={handleLogin} className="space-y-4">
-          {/* Username */}
+          {/* Email */}
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-              Username
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+              Email Address
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
               <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
                 disabled={loading}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 text-gray-900"
               />
@@ -132,6 +154,47 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+
+        {/* OAuth Divider */}
+        <div className="mt-8 relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-white text-gray-500">or continue with</span>
+          </div>
+        </div>
+
+        {/* OAuth Buttons */}
+        <div className="mt-6 space-y-3">
+          <button
+            onClick={handleGitHubLogin}
+            disabled={loading}
+            className="w-full bg-gray-900 text-white py-2 rounded-lg font-medium hover:bg-gray-800 disabled:bg-gray-400 transition flex items-center justify-center gap-2"
+          >
+            <Github className="w-5 h-5" />
+            GitHub
+          </button>
+          <button
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="w-full bg-white text-gray-900 border border-gray-300 py-2 rounded-lg font-medium hover:bg-gray-50 disabled:bg-gray-100 transition flex items-center justify-center gap-2"
+          >
+            <Chrome className="w-5 h-5 text-red-500" />
+            Google
+          </button>
+        </div>
+
+        {/* Register Link */}
+        <div className="mt-6 text-center text-sm text-gray-600">
+          Don't have an account?{' '}
+          <button
+            onClick={() => navigate('/register')}
+            className="text-blue-600 hover:text-blue-700 font-medium transition"
+          >
+            Sign up here
+          </button>
+        </div>
 
         {/* Demo Credentials */}
         <div className="mt-6 pt-6 border-t border-gray-200">

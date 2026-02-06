@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Tabs, TabList, Tab, TabPanel } from 'react-aria-components'
 import { useNavigate } from 'react-router-dom'
-import { BarChart3, Download, Package, LogOut, Plus } from 'lucide-react'
+import { BarChart3, Download, Package, LogOut, Plus, Anchor, Settings, Search } from 'lucide-react'
 import { Dashboard } from '@/components/Dashboard'
 import { ImportBookmarks } from '@/components/ImportBookmarks'
 import { RepositoryList } from '@/components/RepositoryList'
 import { AddRepository } from '@/components/AddRepository'
+import { NotificationCenter } from '@/components/NotificationCenter'
+import { DeploymentPage } from '@/pages/DeploymentPage'
 import { useTheme } from '@/providers/theme-provider'
 import { useAuth } from '@/contexts/AuthContext'
 import { cx } from '@/utils/cx'
@@ -38,6 +40,21 @@ export function HomePage() {
               <span className="text-sm text-[var(--color-fg-secondary)]">
                 Welcome, <span className="font-medium">{username}</span>
               </span>
+              <NotificationCenter />
+              <button
+                onClick={() => navigate('/search')}
+                className="p-2 rounded-[var(--radius-md)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                title="Search Repositories"
+              >
+                <Search size={20} className="text-[var(--color-fg-quaternary)]" />
+              </button>
+              <button
+                onClick={() => navigate('/notification-settings')}
+                className="p-2 rounded-[var(--radius-md)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                title="Notification Settings"
+              >
+                <Settings size={20} className="text-[var(--color-fg-quaternary)]" />
+              </button>
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-[var(--radius-md)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
@@ -118,6 +135,20 @@ export function HomePage() {
                 <Plus className="size-5" />
                 Add Repository
               </Tab>
+              <Tab
+                id="deploy"
+                className={({ isSelected }) =>
+                  cx(
+                    'flex items-center gap-2 px-1 py-4 text-[length:var(--text-sm)] font-medium border-b-2 transition-colors outline-none cursor-pointer',
+                    isSelected
+                      ? 'border-[var(--color-brand-500)] text-[var(--color-brand-600)]'
+                      : 'border-transparent text-[var(--color-fg-quaternary)] hover:text-[var(--color-fg-secondary)] hover:border-[var(--color-border-primary)]'
+                  )
+                }
+              >
+                <Anchor className="size-5" />
+                Deploy
+              </Tab>
             </TabList>
           </div>
         </nav>
@@ -134,6 +165,9 @@ export function HomePage() {
           </TabPanel>
           <TabPanel id="add">
             <AddRepository onRepositoryAdded={() => setSelectedTab('repositories')} />
+          </TabPanel>
+          <TabPanel id="deploy">
+            <DeploymentPage />
           </TabPanel>
         </main>
       </Tabs>

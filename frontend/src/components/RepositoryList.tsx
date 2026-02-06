@@ -259,6 +259,10 @@ export function RepositoryList() {
     }
 
     try {
+      // Clear any previous clone jobs first
+      await cloneQueueApi.clear()
+      setCloneJobs([])
+      
       const response = await cloneQueueApi.add(reposToClone.map((r) => r.id))
       toast.success(`Started cloning ${response.data.jobs_added} repositories`)
       setIsCloning(true)
@@ -515,13 +519,13 @@ export function RepositoryList() {
             <div className="relative">
               <button
                 onClick={() => setShowExportMenu(!showExportMenu)}
-                className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)] bg-white hover:bg-[var(--color-bg-tertiary)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] transition-colors flex items-center gap-2"
+                className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)] bg-[var(--color-bg-primary)] hover:bg-[var(--color-bg-tertiary)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] transition-colors flex items-center gap-2"
               >
                 <Download className="size-4" />
                 Export
               </button>
               {showExportMenu && (
-                <div className="absolute right-0 mt-1 w-40 bg-white border border-[var(--color-border-primary)] rounded-[var(--radius-md)] shadow-lg z-10">
+                <div className="absolute right-0 mt-1 w-40 bg-[var(--color-bg-primary)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] shadow-lg z-10">
                   <button
                     onClick={() => handleExport('csv')}
                     className="w-full px-4 py-2 text-left text-[length:var(--text-sm)] hover:bg-[var(--color-bg-tertiary)]"
@@ -566,7 +570,7 @@ export function RepositoryList() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCategoryModal(true)}
-              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-brand-700)] bg-white border border-[var(--color-brand-300)] rounded-[var(--radius-md)] hover:bg-[var(--color-brand-100)] transition-colors"
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-brand-700)] dark:text-[var(--color-brand-400)] bg-[var(--color-brand-50)] dark:bg-[var(--color-brand-900)] border border-[var(--color-brand-300)] dark:border-[var(--color-brand-700)] rounded-[var(--radius-md)] hover:bg-[var(--color-brand-100)] dark:hover:bg-[var(--color-brand-800)] transition-colors"
             >
               <Folder className="size-4 inline mr-1" />
               Change Category
@@ -574,7 +578,7 @@ export function RepositoryList() {
             <button
               onClick={handleBulkClone}
               disabled={isCloning}
-              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-success-700)] bg-white border border-[var(--color-success-300)] rounded-[var(--radius-md)] hover:bg-[var(--color-success-50)] transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-success-700)] dark:text-[var(--color-success-400)] bg-[var(--color-success-50)] dark:bg-[var(--color-success-900)] border border-[var(--color-success-300)] dark:border-[var(--color-success-700)] rounded-[var(--radius-md)] hover:bg-[var(--color-success-100)] dark:hover:bg-[var(--color-success-800)] transition-colors disabled:opacity-50"
             >
               {isCloning ? (
                 <Loader2 className="size-4 inline mr-1 animate-spin" />
@@ -585,7 +589,7 @@ export function RepositoryList() {
             </button>
             <button
               onClick={handleBulkDelete}
-              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-error-700)] bg-white border border-[var(--color-error-300)] rounded-[var(--radius-md)] hover:bg-[var(--color-error-50)] transition-colors"
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-error-700)] dark:text-[var(--color-error-400)] bg-[var(--color-error-50)] dark:bg-[var(--color-error-900)] border border-[var(--color-error-300)] dark:border-[var(--color-error-700)] rounded-[var(--radius-md)] hover:bg-[var(--color-error-100)] dark:hover:bg-[var(--color-error-800)] transition-colors"
             >
               <Trash2 className="size-4 inline mr-1" />
               Delete

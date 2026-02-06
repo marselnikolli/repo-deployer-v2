@@ -9,16 +9,41 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { api } from '../services/api';
-import { Stats } from '../types';
+import { Code, TrendingUp, Package, Star, Activity } from 'lucide-react';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
+interface DashboardStats {
+  total_repos: number;
+  total_stars: number;
+  avg_stars: number;
+  total_updates: number;
+  languages: Record<string, number>;
+  status_breakdown: Record<string, number>;
+  recent_repos: Array<{
+    id: number;
+    name: string;
+    url: string;
+    stars: number;
+    language: string | null;
+    last_updated: string | null;
+  }>;
+}
+
+interface TopRepo {
+  id: number;
+  name: string;
+  url: string;
+  stars: number;
+  language: string | null;
+  description: string | null;
+}
+
 export default function Analytics() {
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [topRepos, setTopRepos] = useState<TopRepo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
 
@@ -31,8 +56,20 @@ export default function Analytics() {
   const fetchStats = async () => {
     try {
       setError(undefined);
-      const data = await api.getStats();
-      setStats(data);
+      const [statsRes, topReposRes] = await Promise.all([
+        fetch('/api/analytics/dashboard'),
+        fetch('/api/analytics/top-repos?limit=5'),
+      ]);
+
+      if (!statsRes.ok || !topReposRes.ok) {
+        throw new Error('Failed to fetch analytics');
+      }
+
+      const statsData = await statsRes.json();
+      const topReposData = await topReposRes.json();
+
+      setStats(statsData);
+      setTopRepos(topReposData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load analytics');
       console.error('Analytics error:', err);
@@ -44,14 +81,14 @@ export default function Analytics() {
   if (loading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border border-gray-300 border-t-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border border-[var(--color-border-secondary)] border-t-[var(--color-brand-500)]"></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+      <div className="bg-[var(--color-error-100)] dark:bg-[var(--color-error-900)] border border-[var(--color-error-300)] dark:border-[var(--color-error-800)] rounded-lg p-4 text-[var(--color-error-700)] dark:text-[var(--color-error-200)]">
         <p className="font-semibold">Error Loading Analytics</p>
         <p className="text-sm">{error}</p>
       </div>
@@ -59,87 +96,91 @@ export default function Analytics() {
   }
 
   if (!stats) {
-    return <div className="text-center py-8 text-gray-500">No analytics data available</div>;
+    return <div className="text-center py-8 text-[var(--color-fg-tertiary)]">No analytics data available</div>;
   }
 
-  // Prepare data for category bar chart
-  const categoryData = Object.entries(stats.categories || {}).map(([name, count]) => ({
-    name: name.replace('_', ' '),
-    repositories: count,
+  // Prepare language data for bar chart
+  const languageData = Object.entries(stats.languages)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([name, count]) => ({
+      name,
+      repositories: count,
+    }));
+
+  // Prepare status data for pie chart
+  const statusData = Object.entries(stats.status_breakdown).map(([name, value]) => ({
+    name: name.charAt(0).toUpperCase() + name.slice(1),
+    value,
   }));
 
-  // Prepare data for deployment pie chart
-  const deploymentData = [
-    { name: 'Cloned', value: stats.total_cloned },
-    { name: 'Deployed', value: stats.total_deployed },
-    { name: 'Not Deployed', value: stats.total_repositories - stats.total_deployed },
-  ];
-
-  const pieColors = ['#10b981', '#3b82f6', '#d1d5db'];
+  const pieColors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
 
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Repositories"
-          value={stats.total_repositories}
+          value={stats.total_repos}
           color="blue"
-          icon="📦"
+          icon={<Package className="w-6 h-6" />}
         />
         <StatCard
-          title="Cloned"
-          value={stats.total_cloned}
+          title="Total Stars"
+          value={stats.total_stars}
+          color="yellow"
+          icon={<Star className="w-6 h-6" />}
+        />
+        <StatCard
+          title="Average Stars"
+          value={stats.avg_stars.toFixed(1)}
           color="green"
-          icon="✅"
-          percentage={
-            stats.total_repositories > 0
-              ? Math.round((stats.total_cloned / stats.total_repositories) * 100)
-              : 0
-          }
+          icon={<TrendingUp className="w-6 h-6" />}
         />
         <StatCard
-          title="Deployed"
-          value={stats.total_deployed}
-          color="blue"
-          icon="🚀"
-          percentage={
-            stats.total_repositories > 0
-              ? Math.round((stats.total_deployed / stats.total_repositories) * 100)
-              : 0
-          }
+          title="Recent Updates (30d)"
+          value={stats.total_updates}
+          color="purple"
+          icon={<Activity className="w-6 h-6" />}
         />
       </div>
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Category Bar Chart */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Repositories by Category</h3>
-          {categoryData.length > 0 ? (
+        {/* Language Bar Chart */}
+        <div className="bg-[var(--color-bg-primary)] rounded-lg shadow-md p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Code className="w-5 h-5 text-[var(--color-blue-icon)]" />
+            <h3 className="text-lg font-semibold text-[var(--color-fg-primary)]">Languages Used</h3>
+          </div>
+          {languageData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={categoryData}>
+              <BarChart data={languageData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
                 <YAxis />
                 <Tooltip />
-                <Bar dataKey="repositories" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="repositories" fill="#1570EF" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-[300px] flex items-center justify-center text-gray-500">
-              No category data available
+            <div className="h-[300px] flex items-center justify-center text-[var(--color-fg-tertiary)]">
+              No language data available
             </div>
           )}
         </div>
 
-        {/* Deployment Pie Chart */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Deployment Status</h3>
+        {/* Status Pie Chart */}
+        <div className="bg-[var(--color-bg-primary)] rounded-lg shadow-md p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="w-5 h-5 text-[var(--color-green-icon)]" />
+            <h3 className="text-lg font-semibold text-[var(--color-fg-primary)]">Repository Status</h3>
+          </div>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
-                data={deploymentData}
+                data={statusData}
                 cx="50%"
                 cy="50%"
                 labelLine={false}
@@ -150,7 +191,7 @@ export default function Analytics() {
                 fill="#8884d8"
                 dataKey="value"
               >
-                {deploymentData.map((entry, index) => (
+                {statusData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
                 ))}
               </Pie>
@@ -161,42 +202,81 @@ export default function Analytics() {
       </div>
 
       {/* Summary Stats */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Summary</h3>
+      <div className="bg-[var(--color-bg-primary)] rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold text-[var(--color-fg-primary)] mb-4">Quick Stats</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <SummaryStat
-            label="Clone Rate"
-            value={
-              stats.total_repositories > 0
-                ? `${Math.round((stats.total_cloned / stats.total_repositories) * 100)}%`
-                : '0%'
-            }
-            color="green"
-          />
-          <SummaryStat
-            label="Deploy Rate"
-            value={
-              stats.total_repositories > 0
-                ? `${Math.round((stats.total_deployed / stats.total_repositories) * 100)}%`
-                : '0%'
-            }
+            label="Total Repos"
+            value={stats.total_repos}
             color="blue"
           />
           <SummaryStat
-            label="Not Cloned"
-            value={stats.total_repositories - stats.total_cloned}
-            color="gray"
+            label="Total Stars"
+            value={stats.total_stars.toLocaleString()}
+            color="yellow"
           />
           <SummaryStat
-            label="Categories"
-            value={Object.keys(stats.categories || {}).length}
+            label="Languages"
+            value={Object.keys(stats.languages).length}
             color="purple"
+          />
+          <SummaryStat
+            label="Updated (30d)"
+            value={stats.total_updates}
+            color="green"
           />
         </div>
       </div>
 
+      {/* Top Repositories */}
+      <div className="bg-[var(--color-bg-primary)] rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold text-[var(--color-fg-primary)] mb-4">Top Repositories</h3>
+        <div className="space-y-3">
+          {topRepos.map((repo, idx) => (
+            <a
+              key={repo.id}
+              href={repo.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block p-4 rounded border border-[var(--color-border-secondary)] hover:border-[var(--color-border-primary)] hover:bg-[var(--color-bg-tertiary)] transition"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[var(--color-fg-secondary)] bg-[var(--color-bg-secondary)] px-2 py-1 rounded">
+                      #{idx + 1}
+                    </span>
+                    <h4 className="font-semibold text-[var(--color-fg-primary)] hover:text-[var(--color-brand-600)]">
+                      {repo.name}
+                    </h4>
+                  </div>
+                  {repo.description && (
+                    <p className="text-sm text-[var(--color-fg-tertiary)] mt-1 line-clamp-1">
+                      {repo.description}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-4 mt-2">
+                {repo.language && (
+                  <span className="text-xs px-2 py-1 bg-[var(--color-blue-bg)] text-[var(--color-blue-text)] rounded">
+                    {repo.language}
+                  </span>
+                )}
+                <div className="flex items-center gap-1">
+                  <Star className="w-4 h-4 text-[var(--color-yellow-icon)]" />
+                  <span className="text-sm font-medium text-[var(--color-fg-secondary)]">
+                    {repo.stars.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+
       {/* Last Updated */}
-      <div className="text-right text-sm text-gray-500">
+      <div className="text-right text-sm text-[var(--color-fg-tertiary)]">
         Last updated: {new Date().toLocaleTimeString()}
       </div>
     </div>
@@ -205,23 +285,31 @@ export default function Analytics() {
 
 interface StatCardProps {
   title: string;
-  value: number;
-  color: 'blue' | 'green' | 'purple';
-  icon: string;
-  percentage?: number;
+  value: string | number;
+  color: 'blue' | 'green' | 'purple' | 'yellow';
+  icon: React.ReactNode;
 }
 
-function StatCard({ title, value, color, icon, percentage }: StatCardProps) {
+function StatCard({ title, value, color, icon }: StatCardProps) {
   const bgColor = {
-    blue: 'bg-blue-50 border-blue-200',
-    green: 'bg-green-50 border-green-200',
-    purple: 'bg-purple-50 border-purple-200',
+    blue: 'bg-[var(--color-blue-bg)] dark:bg-[var(--color-blue-bg)] border-[var(--color-blue-bg)]',
+    green: 'bg-[var(--color-green-bg)] dark:bg-[var(--color-green-bg)] border-[var(--color-green-bg)]',
+    purple: 'bg-[var(--color-purple-bg)] dark:bg-[var(--color-purple-bg)] border-[var(--color-purple-bg)]',
+    yellow: 'bg-[var(--color-yellow-bg)] dark:bg-[var(--color-yellow-bg)] border-[var(--color-yellow-bg)]',
   }[color];
 
   const textColor = {
-    blue: 'text-blue-900',
-    green: 'text-green-900',
-    purple: 'text-purple-900',
+    blue: 'text-[var(--color-blue-text)]',
+    green: 'text-[var(--color-green-text)]',
+    purple: 'text-[var(--color-purple-text)]',
+    yellow: 'text-[var(--color-yellow-text)]',
+  }[color];
+
+  const iconColor = {
+    blue: 'text-[var(--color-blue-icon)]',
+    green: 'text-[var(--color-green-icon)]',
+    purple: 'text-[var(--color-purple-icon)]',
+    yellow: 'text-[var(--color-yellow-icon)]',
   }[color];
 
   return (
@@ -230,11 +318,8 @@ function StatCard({ title, value, color, icon, percentage }: StatCardProps) {
         <div>
           <p className={`${textColor} text-sm font-medium`}>{title}</p>
           <p className={`${textColor} text-2xl font-bold mt-1`}>{value}</p>
-          {percentage !== undefined && (
-            <p className={`${textColor} text-xs mt-1`}>{percentage}%</p>
-          )}
         </div>
-        <span className="text-2xl">{icon}</span>
+        <div className={`${iconColor}`}>{icon}</div>
       </div>
     </div>
   );
@@ -243,15 +328,16 @@ function StatCard({ title, value, color, icon, percentage }: StatCardProps) {
 interface SummaryStatProps {
   label: string;
   value: number | string;
-  color: string;
+  color: 'green' | 'blue' | 'gray' | 'purple' | 'yellow';
 }
 
 function SummaryStat({ label, value, color }: SummaryStatProps) {
   const colors = {
-    green: 'text-green-600 bg-green-50',
-    blue: 'text-blue-600 bg-blue-50',
-    gray: 'text-gray-600 bg-gray-50',
-    purple: 'text-purple-600 bg-purple-50',
+    green: 'text-[var(--color-green-text)] bg-[var(--color-green-bg)]',
+    blue: 'text-[var(--color-blue-text)] bg-[var(--color-blue-bg)]',
+    gray: 'text-[var(--color-fg-secondary)] bg-[var(--color-bg-tertiary)]',
+    purple: 'text-[var(--color-purple-text)] bg-[var(--color-purple-bg)]',
+    yellow: 'text-[var(--color-yellow-text)] bg-[var(--color-yellow-bg)]',
   };
 
   return (

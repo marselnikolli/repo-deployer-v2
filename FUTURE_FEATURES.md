@@ -357,10 +357,10 @@ auto_pull: "0 2 * * 0"        # Weekly on Sunday at 2 AM
 - [ ] Webhook integration
 
 ### Phase 4 - Teams & Sharing (v2.5)
-- [ ] Multi-user support
-- [ ] Team management
-- [ ] Collections feature
-- [ ] Role-based access
+- [x] Multi-user support
+- [x] Team management
+- [x] Collections feature
+- [x] Role-based access
 
 ### Phase 5 - Advanced Features (v3.0)
 - [ ] Full-text search

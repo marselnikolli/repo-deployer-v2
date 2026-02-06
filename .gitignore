@@ -67,3 +67,5 @@ htmlcov/
 *.bak
 *.backup
 *.old
+# Cloned repositories
+backend/repos/

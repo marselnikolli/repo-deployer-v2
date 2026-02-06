@@ -6,8 +6,20 @@ from datetime import datetime
 from typing import List, Optional, Dict, Callable
 from enum import Enum
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 import os
+import logging
+import sys
+
+# Configure logging to output to stdout
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 class CloneStatus(str, Enum):
@@ -57,8 +69,10 @@ class CloneQueueService:
         self.job_counter = 0
         self.max_concurrent = 3
         self.active_jobs = 0
+        self._active_lock = threading.Lock()
         self.is_running = False
         self.worker_thread: Optional[threading.Thread] = None
+        self.executor: Optional[ThreadPoolExecutor] = None
         self.on_job_update: Optional[Callable[[CloneJob], None]] = None
         self.db_session_factory: Optional[Callable] = None
         self._initialized = True
@@ -66,17 +80,22 @@ class CloneQueueService:
     def start(self):
         """Start the clone queue worker"""
         if self.is_running:
+            logger.info("Clone queue already running")
             return
 
         self.is_running = True
-        self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self.executor = ThreadPoolExecutor(max_workers=self.max_concurrent)
+        self.worker_thread = threading.Thread(target=self._worker_loop, daemon=False)
         self.worker_thread.start()
+        logger.info(f"Clone queue worker thread started (ID: {self.worker_thread.ident})")
 
     def stop(self):
         """Stop the clone queue worker"""
         self.is_running = False
         if self.worker_thread:
             self.worker_thread.join(timeout=5)
+        if self.executor:
+            self.executor.shutdown(wait=False)
 
     def add_job(self, repository_id: int, name: str, url: str, target_path: str) -> CloneJob:
         """Add a new clone job to the queue"""
@@ -146,7 +165,7 @@ class CloneQueueService:
     def _update_repository_cloned_status(self, repository_id: int, path: str):
         """Update repository cloned status in database"""
         if not self.db_session_factory:
-            print(f"Warning: No db_session_factory set, cannot update repository {repository_id}")
+            logger.warning(f"No db_session_factory set, cannot update repository {repository_id}")
             return
 
         try:
@@ -159,70 +178,86 @@ class CloneQueueService:
                     repo.path = path
                     repo.last_synced = datetime.utcnow()
                     db.commit()
-                    print(f"Updated repository {repository_id} cloned status to True")
+                    logger.info(f"Updated repository {repository_id} cloned status to True")
             finally:
                 db.close()
         except Exception as e:
-            print(f"Error updating repository cloned status: {e}")
+            logger.error(f"Error updating repository cloned status: {e}", exc_info=True)
+
+    def _process_job(self, job: CloneJob):
+        """Process a single clone job in a thread pool worker"""
+        from services.git_service import clone_repo
+
+        try:
+            # Ensure target directory exists
+            target_dir = os.path.dirname(job.target_path)
+            os.makedirs(target_dir, exist_ok=True)
+
+            # Clone the repository with timeout
+            logger.info(f"Cloning to {job.target_path}")
+            success = clone_repo(job.repository_url, job.target_path)
+
+            if success:
+                job.status = CloneStatus.COMPLETED
+                job.progress = 100
+                logger.info(f"Clone completed for job {job.id}: {job.repository_name}")
+                self._update_repository_cloned_status(job.repository_id, job.target_path)
+            else:
+                job.status = CloneStatus.FAILED
+                job.error_message = "Clone operation failed"
+                logger.error(f"Clone failed for job {job.id}: {job.repository_name}")
+
+        except Exception as e:
+            job.status = CloneStatus.FAILED
+            job.error_message = str(e)
+            logger.error(f"Clone error for job {job.id}: {e}", exc_info=True)
+
+        finally:
+            job.completed_at = datetime.utcnow()
+            with self._active_lock:
+                self.active_jobs -= 1
+            if self.on_job_update:
+                self.on_job_update(job)
 
     def _worker_loop(self):
-        """Main worker loop that processes clone jobs"""
-        from services.git_service import clone_repo
+        """Main worker loop that dispatches clone jobs to thread pool"""
+        logger.info("Clone queue worker loop started")
 
         while self.is_running:
             try:
                 # Check if we can process more jobs
-                if self.active_jobs >= self.max_concurrent:
-                    time.sleep(0.5)
-                    continue
+                with self._active_lock:
+                    if self.active_jobs >= self.max_concurrent:
+                        time.sleep(0.5)
+                        continue
 
                 # Get next job from queue (non-blocking)
                 try:
                     job_id = self.queue.get(timeout=1)
-                except:
+                except Exception:
                     continue
 
                 job = self.jobs.get(job_id)
                 if not job or job.status == CloneStatus.CANCELLED:
                     continue
 
-                # Start processing the job
-                self.active_jobs += 1
+                # Mark job as in-progress and dispatch to thread pool
+                with self._active_lock:
+                    self.active_jobs += 1
                 job.status = CloneStatus.IN_PROGRESS
                 job.started_at = datetime.utcnow()
+                logger.info(f"Dispatching clone job {job.id}: {job.repository_name}")
 
                 if self.on_job_update:
                     self.on_job_update(job)
 
-                try:
-                    # Ensure target directory exists
-                    os.makedirs(os.path.dirname(job.target_path), exist_ok=True)
-
-                    # Clone the repository
-                    success = clone_repo(job.repository_url, job.target_path)
-
-                    if success:
-                        job.status = CloneStatus.COMPLETED
-                        job.progress = 100
-                        # Update database
-                        self._update_repository_cloned_status(job.repository_id, job.target_path)
-                    else:
-                        job.status = CloneStatus.FAILED
-                        job.error_message = "Clone operation failed"
-
-                except Exception as e:
-                    job.status = CloneStatus.FAILED
-                    job.error_message = str(e)
-
-                finally:
-                    job.completed_at = datetime.utcnow()
-                    self.active_jobs -= 1
-
-                    if self.on_job_update:
-                        self.on_job_update(job)
+                # Submit to thread pool — does NOT block the loop
+                self.executor.submit(self._process_job, job)
 
             except Exception as e:
-                print(f"Clone queue worker error: {e}")
+                logger.error(f"Clone queue worker error: {e}", exc_info=True)
+                with self._active_lock:
+                    self.active_jobs = max(0, self.active_jobs - 1)
                 continue
 
 

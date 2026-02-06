@@ -5,10 +5,14 @@ import { cx } from '@/utils/cx'
 import toast from 'react-hot-toast'
 
 interface ImportState {
-  step: 'upload' | 'preview' | 'importing' | 'complete'
+  step: 'upload' | 'scanning' | 'preview' | 'importing' | 'complete'
   file: File | null
   totalFound: number
+  scannedCount: number
   importedCount: number
+  duplicatesInFile: number
+  duplicatesInDb: number
+  newlyImported: number
   message: string
 }
 
@@ -19,7 +23,11 @@ export function ImportBookmarks() {
     step: 'upload',
     file: null,
     totalFound: 0,
+    scannedCount: 0,
     importedCount: 0,
+    duplicatesInFile: 0,
+    duplicatesInDb: 0,
+    newlyImported: 0,
     message: '',
   })
 
@@ -30,55 +38,95 @@ export function ImportBookmarks() {
     }
 
     setState({
-      step: 'preview',
+      step: 'scanning',
       file,
       totalFound: 0,
+      scannedCount: 0,
       importedCount: 0,
-      message: 'Analyzing file...',
+      duplicatesInFile: 0,
+      duplicatesInDb: 0,
+      newlyImported: 0,
+      message: 'Analyzing bookmarks...',
     })
 
-    // Parse the file to get count (we'll send it to the server)
+    // Simulate scanning progress
+    const scanInterval = setInterval(() => {
+      setState((prev) => {
+        // Gradually increase scanned count up to a reasonable limit
+        const nextCount = prev.scannedCount + Math.floor(Math.random() * 10) + 5
+        return {
+          ...prev,
+          scannedCount: Math.min(nextCount, 1000), // Cap at 1000 for simulation
+        }
+      })
+    }, 100)
+
+    // Parse the file to get count
     try {
       const response = await importApi.htmlFile(file)
+      clearInterval(scanInterval)
+      
       setState((prev) => ({
         ...prev,
         step: 'preview',
         totalFound: response.data.total_found,
+        scannedCount: response.data.total_found,
+        duplicatesInFile: response.data.duplicates_in_file || 0,
+        duplicatesInDb: response.data.duplicates_in_db || 0,
+        newlyImported: response.data.newly_imported || response.data.total_found,
         message: response.data.message,
       }))
     } catch (error: unknown) {
+      clearInterval(scanInterval)
       const err = error as { response?: { data?: { detail?: string } } }
       toast.error(err.response?.data?.detail || 'Failed to analyze file')
       resetState()
     }
   }
 
-  const confirmImport = () => {
+  const confirmImport = async () => {
+    if (!state.file) return
+
     setState((prev) => ({
       ...prev,
       step: 'importing',
       importedCount: 0,
     }))
 
-    // Simulate progress (backend processes in background)
-    let progress = 0
-    const interval = setInterval(() => {
-      progress += Math.random() * 15
-      if (progress >= 100) {
-        progress = 100
-        clearInterval(interval)
+    try {
+      // Simulate progress updates while importing
+      const startTime = Date.now()
+      const progressInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime
+        // Gradually increase progress, but leave room for it to reach 100% on complete
+        const simulated = Math.min((elapsed / 3000) * 90, 90)
         setState((prev) => ({
           ...prev,
-          step: 'complete',
-          importedCount: prev.totalFound,
+          importedCount: Math.floor((simulated / 100) * state.newlyImported),
         }))
-      } else {
-        setState((prev) => ({
-          ...prev,
-          importedCount: Math.floor((progress / 100) * prev.totalFound),
-        }))
-      }
-    }, 200)
+      }, 200)
+
+      // Call the import API
+      const response = await importApi.htmlFile(state.file)
+      
+      clearInterval(progressInterval)
+
+      // Set to 100% complete
+      setState((prev) => ({
+        ...prev,
+        step: 'complete',
+        importedCount: prev.newlyImported,
+      }))
+
+      toast.success(`Successfully imported ${response.data.newly_imported || state.newlyImported} repositories`)
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } }
+      toast.error(err.response?.data?.detail || 'Failed to import repositories')
+      setState((prev) => ({
+        ...prev,
+        step: 'preview',
+      }))
+    }
   }
 
   const resetState = () => {
@@ -86,7 +134,11 @@ export function ImportBookmarks() {
       step: 'upload',
       file: null,
       totalFound: 0,
+      scannedCount: 0,
       importedCount: 0,
+      duplicatesInFile: 0,
+      duplicatesInDb: 0,
+      newlyImported: 0,
       message: '',
     })
     if (fileInputRef.current) {
@@ -185,6 +237,46 @@ export function ImportBookmarks() {
           </>
         )}
 
+        {state.step === 'scanning' && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--color-brand-50)] flex items-center justify-center mb-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-brand-500)] border-t-transparent"></div>
+              </div>
+              <p className="text-[length:var(--text-lg)] font-semibold text-[var(--color-fg-primary)]">
+                Scanning bookmarks...
+              </p>
+              <p className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)] mt-2">
+                {state.scannedCount} URLs scanned
+              </p>
+            </div>
+
+            <div className="bg-[var(--color-info-50)] border border-[var(--color-info-200)] rounded-[var(--radius-lg)] p-4">
+              <div className="space-y-2">
+                <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-info-800)]">
+                  Scanning Process
+                </p>
+                <ul className="text-[length:var(--text-xs)] text-[var(--color-info-700)] space-y-1">
+                  <li>• Parsing HTML bookmark file</li>
+                  <li>• Extracting GitHub repository URLs</li>
+                  <li>• Validating repository links</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="relative h-2 bg-[var(--color-bg-tertiary)] rounded-full overflow-hidden">
+              <div
+                className="absolute top-0 left-0 h-full bg-[var(--color-brand-500)] rounded-full animate-pulse"
+                style={{ width: `${Math.min((state.scannedCount / 500) * 100, 95)}%` }}
+              />
+            </div>
+
+            <p className="text-center text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)]">
+              Processing file... This may take a moment
+            </p>
+          </div>
+        )}
+
         {state.step === 'preview' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -223,6 +315,28 @@ export function ImportBookmarks() {
               </div>
             </div>
 
+            {(state.duplicatesInFile > 0 || state.duplicatesInDb > 0) && (
+              <div className="bg-[var(--color-warning-50)] border border-[var(--color-warning-200)] rounded-[var(--radius-lg)] p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="size-5 text-[var(--color-warning-600)] flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-[length:var(--text-sm)] font-semibold text-[var(--color-warning-800)]">
+                      Import Summary
+                    </p>
+                    <ul className="mt-2 text-[length:var(--text-sm)] text-[var(--color-warning-700)] space-y-1">
+                      <li>• <strong>{state.newlyImported}</strong> new repositories to import</li>
+                      {state.duplicatesInFile > 0 && (
+                        <li>• <strong>{state.duplicatesInFile}</strong> duplicate{state.duplicatesInFile === 1 ? '' : 's'} in this file</li>
+                      )}
+                      {state.duplicatesInDb > 0 && (
+                        <li>• <strong>{state.duplicatesInDb}</strong> already in your database</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 onClick={resetState}
@@ -232,7 +346,7 @@ export function ImportBookmarks() {
               </button>
               <button
                 onClick={confirmImport}
-                className="flex-1 px-4 py-2.5 text-[length:var(--text-sm)] font-medium text-white bg-[var(--color-brand-600)] rounded-[var(--radius-lg)] hover:bg-[var(--color-brand-700)] transition-colors"
+                className="flex-1 px-4 py-2.5 text-[length:var(--text-sm)] font-medium text-[color:var(--color-fg-white)] bg-[var(--color-brand-600)] rounded-[var(--radius-lg)] hover:bg-[var(--color-brand-700)] transition-colors"
               >
                 Confirm Import
               </button>
@@ -250,8 +364,13 @@ export function ImportBookmarks() {
                 Importing repositories...
               </p>
               <p className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)] mt-1">
-                {state.importedCount} of {state.totalFound} repositories
+                Processing {state.importedCount} of {state.newlyImported} new repositories
               </p>
+              {(state.duplicatesInFile > 0 || state.duplicatesInDb > 0) && (
+                <p className="text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)] mt-2">
+                  {state.duplicatesInFile + state.duplicatesInDb} duplicates being skipped
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -268,6 +387,19 @@ export function ImportBookmarks() {
                 />
               </div>
             </div>
+
+            <div className="bg-[var(--color-info-50)] border border-[var(--color-info-200)] rounded-[var(--radius-lg)] p-4">
+              <div className="space-y-2">
+                <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-info-800)]">
+                  Import Details
+                </p>
+                <ul className="text-[length:var(--text-xs)] text-[var(--color-info-700)] space-y-1">
+                  <li>• Analyzing repository metadata</li>
+                  <li>• Checking for existing repositories</li>
+                  <li>• Adding new repositories to database</li>
+                </ul>
+              </div>
+            </div>
           </div>
         )}
 
@@ -280,14 +412,54 @@ export function ImportBookmarks() {
               <p className="text-[length:var(--text-lg)] font-semibold text-[var(--color-fg-primary)]">
                 Import Complete!
               </p>
-              <p className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)] mt-1">
-                Successfully imported {state.totalFound} repositories
-              </p>
+            </div>
+
+            <div className="bg-[var(--color-success-50)] border border-[var(--color-success-200)] rounded-[var(--radius-lg)] p-4">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-[length:var(--text-sm)] text-[var(--color-fg-secondary)]">
+                    Newly imported
+                  </span>
+                  <span className="text-[length:var(--text-sm)] font-semibold text-[var(--color-success-700)]">
+                    {state.newlyImported}
+                  </span>
+                </div>
+                {state.duplicatesInFile > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[length:var(--text-sm)] text-[var(--color-fg-secondary)]">
+                      Duplicates in file
+                    </span>
+                    <span className="text-[length:var(--text-sm)] font-semibold text-[var(--color-warning-600)]">
+                      {state.duplicatesInFile}
+                    </span>
+                  </div>
+                )}
+                {state.duplicatesInDb > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[length:var(--text-sm)] text-[var(--color-fg-secondary)]">
+                      Already in database
+                    </span>
+                    <span className="text-[length:var(--text-sm)] font-semibold text-[var(--color-warning-600)]">
+                      {state.duplicatesInDb}
+                    </span>
+                  </div>
+                )}
+                <div className="pt-3 border-t border-[var(--color-success-200)]">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">
+                      Total processed
+                    </span>
+                    <span className="text-[length:var(--text-sm)] font-semibold text-[var(--color-success-700)]">
+                      {state.totalFound}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <button
               onClick={resetState}
-              className="w-full px-4 py-2.5 text-[length:var(--text-sm)] font-medium text-white bg-[var(--color-brand-600)] rounded-[var(--radius-lg)] hover:bg-[var(--color-brand-700)] transition-colors"
+              className="w-full px-4 py-2.5 text-[length:var(--text-sm)] font-medium text-[color:var(--color-fg-white)] bg-[var(--color-brand-600)] rounded-[var(--radius-lg)] hover:bg-[var(--color-brand-700)] transition-colors"
             >
               Import More
             </button>

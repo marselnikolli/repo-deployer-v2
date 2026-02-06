@@ -117,10 +117,10 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
   const getHealthBadge = () => {
     const status = repo.health_status || 'unknown'
     const badges: Record<string, { bg: string; text: string; icon: typeof CheckCircle }> = {
-      healthy: { bg: 'bg-green-100', text: 'text-green-700', icon: CheckCircle },
-      archived: { bg: 'bg-yellow-100', text: 'text-yellow-700', icon: Archive },
-      not_found: { bg: 'bg-red-100', text: 'text-red-700', icon: AlertCircle },
-      unknown: { bg: 'bg-gray-100', text: 'text-gray-700', icon: AlertCircle },
+      healthy: { bg: 'bg-[var(--color-green-bg)]', text: 'text-[var(--color-green-text)]', icon: CheckCircle },
+      archived: { bg: 'bg-[var(--color-yellow-bg)]', text: 'text-[var(--color-yellow-text)]', icon: Archive },
+      not_found: { bg: 'bg-[var(--color-red-bg)]', text: 'text-[var(--color-red-text)]', icon: AlertCircle },
+      unknown: { bg: 'bg-[var(--color-gray-100)] dark:bg-[var(--color-gray-900)]', text: 'text-[var(--color-gray-700)] dark:text-[var(--color-gray-300)]', icon: AlertCircle},
     }
     const badge = badges[status] || badges.unknown
     const Icon = badge.icon
@@ -177,22 +177,22 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
           {/* Stats */}
           <div className="grid grid-cols-4 gap-4">
             <div className="bg-[var(--color-bg-secondary)] rounded-lg p-3 text-center">
-              <Star className="size-5 mx-auto mb-1 text-yellow-500" />
+              <Star className="size-5 mx-auto mb-1 text-[var(--color-yellow-icon)]" />
               <div className="text-lg font-semibold text-[var(--color-fg-primary)]">{formatNumber(repo.stars)}</div>
               <div className="text-xs text-[var(--color-fg-tertiary)]">Stars</div>
             </div>
             <div className="bg-[var(--color-bg-secondary)] rounded-lg p-3 text-center">
-              <GitFork className="size-5 mx-auto mb-1 text-blue-500" />
+              <GitFork className="size-5 mx-auto mb-1 text-[var(--color-blue-icon)]" />
               <div className="text-lg font-semibold text-[var(--color-fg-primary)]">{formatNumber(repo.forks)}</div>
               <div className="text-xs text-[var(--color-fg-tertiary)]">Forks</div>
             </div>
             <div className="bg-[var(--color-bg-secondary)] rounded-lg p-3 text-center">
-              <Eye className="size-5 mx-auto mb-1 text-green-500" />
+              <Eye className="size-5 mx-auto mb-1 text-[var(--color-green-icon)]" />
               <div className="text-lg font-semibold text-[var(--color-fg-primary)]">{formatNumber(repo.watchers)}</div>
               <div className="text-xs text-[var(--color-fg-tertiary)]">Watchers</div>
             </div>
             <div className="bg-[var(--color-bg-secondary)] rounded-lg p-3 text-center">
-              <AlertCircle className="size-5 mx-auto mb-1 text-orange-500" />
+              <AlertCircle className="size-5 mx-auto mb-1 text-[var(--color-orange-icon)]" />
               <div className="text-lg font-semibold text-[var(--color-fg-primary)]">{formatNumber(repo.open_issues)}</div>
               <div className="text-xs text-[var(--color-fg-tertiary)]">Issues</div>
             </div>
@@ -272,25 +272,25 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
             <div className="flex items-center gap-3">
               {getHealthBadge()}
               {repo.cloned && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-medium">
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--color-green-bg)] text-[var(--color-green-text)] rounded-md text-xs font-medium">
                   <CheckCircle className="size-3" />
                   Cloned
                 </span>
               )}
               {repo.deployed && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-md text-xs font-medium">
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--color-purple-bg)] text-[var(--color-purple-text)] rounded-md text-xs font-medium">
                   <Server className="size-3" />
                   Deployed
                 </span>
               )}
               {repo.archived && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-md text-xs font-medium">
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--color-yellow-bg)] text-[var(--color-yellow-text)] rounded-md text-xs font-medium">
                   <Archive className="size-3" />
                   Archived
                 </span>
               )}
               {repo.is_fork && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--color-blue-bg)] text-[var(--color-blue-text)] rounded-md text-xs font-medium">
                   <GitFork className="size-3" />
                   Fork
                 </span>
@@ -304,7 +304,7 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
           <button
             onClick={handleSyncMetadata}
             disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[var(--color-fg-primary)] bg-white border border-[var(--color-border-primary)] rounded-lg hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[var(--color-fg-primary)] bg-[var(--color-bg-primary)] border border-[var(--color-border-primary)] rounded-lg hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50 transition-colors"
           >
             <RefreshCw className={cx('size-4', syncing && 'animate-spin')} />
             Sync Metadata
@@ -324,7 +324,7 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
               href={repo.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[var(--color-fg-primary)] bg-white border border-[var(--color-border-primary)] rounded-lg hover:bg-[var(--color-bg-tertiary)] transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[var(--color-fg-primary)] bg-[var(--color-bg-primary)] border border-[var(--color-border-primary)] rounded-lg hover:bg-[var(--color-bg-tertiary)] transition-colors"
             >
               <ExternalLink className="size-4" />
               Open on GitHub

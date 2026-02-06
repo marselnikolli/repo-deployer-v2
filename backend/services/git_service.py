@@ -3,17 +3,66 @@
 from git import Repo, GitCommandError
 from pathlib import Path
 import os
+import subprocess
+import shutil
+from threading import Thread
 
 
-def clone_repo(url: str, path: str) -> bool:
-    """Clone repository"""
+def clone_repo(url: str, path: str, timeout_seconds: int = 300) -> bool:
+    """Clone repository with timeout using subprocess (shallow clone)"""
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Repo.clone_from(url, path)
-        return True
-    except GitCommandError as e:
-        print(f"Error cloning {url}: {e}")
+        
+        # Check if path already exists
+        if os.path.exists(path):
+            print(f"Path {path} already exists, removing it first", flush=True)
+            shutil.rmtree(path)
+        
+        try:
+            print(f"Starting clone: {url} -> {path}", flush=True)
+            # Use shallow clone (--depth 1) to speed up and avoid huge downloads
+            result = subprocess.run(
+                ['git', 'clone', '--depth', '1', '--single-branch', url, path],
+                timeout=timeout_seconds,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                print(f"Clone successful: {path}", flush=True)
+                return True
+            else:
+                error_output = result.stderr or result.stdout
+                print(f"Git clone failed with return code {result.returncode}: {error_output}", flush=True)
+                return False
+                
+        except subprocess.TimeoutExpired:
+            print(f"Clone timed out after {timeout_seconds}s for {url}", flush=True)
+            # Kill any lingering git process and clean up
+            if os.path.exists(path):
+                try:
+                    shutil.rmtree(path)
+                except:
+                    pass
+            return False
+        except Exception as e:
+            print(f"Error cloning {url}: {type(e).__name__}: {e}", flush=True)
+            return False
+    except Exception as e:
+        print(f"Unexpected error in clone_repo: {type(e).__name__}: {e}", flush=True)
         return False
+    finally:
+        # Clean up partial clone if it failed
+        if os.path.exists(path):
+            try:
+                # Check if it's a valid git repo
+                Repo(path)
+            except:
+                print(f"Cleaning up failed clone at {path}", flush=True)
+                try:
+                    shutil.rmtree(path)
+                except:
+                    pass
 
 
 def sync_repo(path: str, url: str) -> bool:

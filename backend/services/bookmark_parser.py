@@ -77,13 +77,45 @@ def filter_github_urls(bookmarks: List[Dict[str, str]]) -> List[Dict[str, str]]:
     github_bookmarks = []
     for bookmark in bookmarks:
         if 'github.com' in bookmark['url'].lower():
-            # Clean the URL to remove tracking parameters
+            # Clean the URL to remove tracking parameters and normalize
             cleaned_url = clean_url(bookmark['url'])
-            github_bookmarks.append({
-                'url': cleaned_url,
-                'title': bookmark['title']
-            })
+            normalized_url = normalize_github_url(cleaned_url)
+            
+            # Only add if it's a valid github.com/owner/repo URL
+            if normalized_url:
+                github_bookmarks.append({
+                    'url': normalized_url,
+                    'title': bookmark['title']
+                })
     return github_bookmarks
+
+
+def normalize_github_url(url: str) -> str:
+    """Extract and normalize GitHub URL to github.com/owner/repo format"""
+    try:
+        # Remove query parameters
+        url = url.split('?')[0]
+        
+        # Parse the URL
+        parsed = urlparse(url)
+        
+        # Extract path components
+        parts = [p for p in parsed.path.split('/') if p]
+        
+        # Should have at least owner and repo
+        if len(parts) < 2:
+            return None
+        
+        # Only take the first two parts (owner/repo)
+        # Ignore /tree/branch, /blob/file, /releases, /pull, etc.
+        owner = parts[0]
+        repo = parts[1]
+        
+        # Reconstruct URL without branch/blob info
+        normalized = f"https://github.com/{owner}/{repo}"
+        return normalized
+    except Exception:
+        return None
 
 
 def categorize_url(url: str, title: str) -> str:

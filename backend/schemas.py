@@ -1,8 +1,62 @@
 """Pydantic schemas for API validation"""
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, EmailStr
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+
+
+# ============ AUTHENTICATION SCHEMAS ============
+
+class UserRegister(BaseModel):
+    email: EmailStr
+    password: str
+    name: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserProfile(BaseModel):
+    email: str
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    auth_provider: str
+    is_verified: bool
+    created_at: datetime
+    last_login: Optional[datetime] = None
+
+
+class UserSchema(BaseModel):
+    id: int
+    email: str
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    auth_provider: str
+    is_verified: bool
+    is_active: bool
+    created_at: datetime
+    last_login: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserSchema
+
+
+class APIKeyResponse(BaseModel):
+    key: str
+    created_at: datetime
+    last_used: Optional[datetime] = None
+
+
+class APIKeyCreate(BaseModel):
+    name: Optional[str] = None
 
 
 # ============ TAG SCHEMAS ============
@@ -102,6 +156,9 @@ class BulkTagRequest(BaseModel):
 class ImportResponse(BaseModel):
     total_found: int
     message: str
+    duplicates_in_file: int = 0
+    duplicates_in_db: int = 0
+    newly_imported: int = 0
 
 
 # ============ STATS ============

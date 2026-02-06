@@ -9,18 +9,22 @@ from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import os
+import logging
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import timedelta
 
 from database import engine, SessionLocal, init_db
-from models import Repository, Category
+from models import Repository, Category, Base
 from schemas import RepositorySchema, RepositoryCreate, RepositoryUpdate, BulkActionRequest, ImportResponse
 from services.bookmark_parser import parse_html_bookmarks, filter_github_urls, categorize_url
 from services.git_service import clone_repo, sync_repo, get_repo_info
 from services.clone_queue import clone_queue, CloneStatus
 # from services.docker_service import deploy_to_docker
 from crud import repository as repo_crud
+from routes import auth, docker, deployment, analytics, scheduler, notifications, search, team, import_routes, collection_routes
+
+logger = logging.getLogger(__name__)
 
 
 # Lifecycle management
@@ -28,9 +32,118 @@ from crud import repository as repo_crud
 async def lifespan(app: FastAPI):
     # Startup
     init_db()
+    # Create all tables (including users table from updated models)
+    Base.metadata.create_all(bind=engine)
+    # Run migrations
+    try:
+        db = SessionLocal()
+        # Migration 1: Users table
+        try:
+            with open('migrations/001_add_users_table.sql', 'r') as f:
+                migration_sql = f.read()
+                # Split by semicolon but skip comments and empty lines
+                for statement in migration_sql.split(';'):
+                    statement = statement.strip()
+                    if statement and not statement.startswith('--'):
+                        try:
+                            db.execute(text(statement))
+                        except Exception as stmt_err:
+                            pass  # Skip if table already exists
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Users migration already applied: {e}")
+        
+        # Migration 2: Scheduled tasks
+        try:
+            with open('migrations/002_add_scheduled_tasks_table.sql', 'r') as f:
+                migration_sql = f.read()
+                for statement in migration_sql.split(';'):
+                    statement = statement.strip()
+                    if statement and not statement.startswith('--'):
+                        try:
+                            db.execute(text(statement))
+                        except Exception as stmt_err:
+                            pass  # Skip if table already exists
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Scheduled tasks migration already applied: {e}")
+        
+        # Migration 3: Notifications
+        try:
+            with open('migrations/003_add_notifications_table.sql', 'r') as f:
+                migration_sql = f.read()
+                for statement in migration_sql.split(';'):
+                    statement = statement.strip()
+                    if statement and not statement.startswith('--'):
+                        try:
+                            db.execute(text(statement))
+                        except Exception as stmt_err:
+                            pass  # Skip if table already exists
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Notifications migration already applied: {e}")
+        
+        # Migration 4: Teams
+        try:
+            with open('migrations/004_add_teams_tables.sql', 'r') as f:
+                migration_sql = f.read()
+                for statement in migration_sql.split(';'):
+                    statement = statement.strip()
+                    if statement and not statement.startswith('--'):
+                        try:
+                            db.execute(text(statement))
+                        except Exception as stmt_err:
+                            pass  # Skip if table already exists
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Teams migration already applied: {e}")
+        
+        # Migration 5: Import Sources
+        try:
+            with open('migrations/005_add_import_sources_table.sql', 'r') as f:
+                migration_sql = f.read()
+                for statement in migration_sql.split(';'):
+                    statement = statement.strip()
+                    if statement and not statement.startswith('--'):
+                        try:
+                            db.execute(text(statement))
+                        except Exception as stmt_err:
+                            pass  # Skip if table already exists
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Import sources migration already applied: {e}")
+        
+        # Migration 6: Deployments
+        try:
+            with open('migrations/006_add_deployments_table.sql', 'r') as f:
+                migration_sql = f.read()
+                for statement in migration_sql.split(';'):
+                    statement = statement.strip()
+                    if statement and not statement.startswith('--'):
+                        try:
+                            db.execute(text(statement))
+                        except Exception as stmt_err:
+                            pass  # Skip if table already exists
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Deployments migration already applied: {e}")
+    finally:
+        db.close()
+    
+    # Start clone queue worker
+    clone_queue.db_session_factory = SessionLocal
+    clone_queue.start()
+    
     yield
+    
     # Shutdown
-
+    clone_queue.stop()
 
 app = FastAPI(
     title="GitHub Repo Deployer API",
@@ -51,6 +164,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register route blueprints
+app.include_router(auth.router)
+app.include_router(docker.router)
+app.include_router(deployment.router)
+app.include_router(analytics.router)
+app.include_router(scheduler.router)
+app.include_router(notifications.router)
+app.include_router(search.router)
+app.include_router(team.router)
+app.include_router(import_routes.router)
+app.include_router(collection_routes.router)
+
 # Dependency
 def get_db():
     db = SessionLocal()
@@ -65,7 +190,6 @@ def get_db():
 @app.post("/api/import/html", response_model=ImportResponse)
 async def import_from_html(
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
 ):
     """Import repositories from HTML bookmark file"""
@@ -80,12 +204,60 @@ async def import_from_html(
         if not github_urls:
             raise HTTPException(status_code=400, detail="No GitHub URLs found in file")
         
-        # Background task: save to database
-        background_tasks.add_task(save_repositories, github_urls, db)
+        # Check for duplicates in the import file and database
+        seen_urls = set()
+        unique_bookmarks = []
+        duplicates_in_file = 0
+        
+        for bookmark in github_urls:
+            if bookmark['url'] in seen_urls:
+                duplicates_in_file += 1
+            else:
+                seen_urls.add(bookmark['url'])
+                unique_bookmarks.append(bookmark)
+        
+        # Check for duplicates in database
+        duplicates_in_db = 0
+        to_import = []
+        
+        for bookmark in unique_bookmarks:
+            existing = repo_crud.get_repo_by_url(db, bookmark['url'])
+            if existing:
+                duplicates_in_db += 1
+            else:
+                to_import.append(bookmark)
+        
+        # Save all repositories (synchronously for better feedback)
+        newly_imported = 0
+        for bookmark in to_import:
+            # Extract owner/repo format
+            url_parts = bookmark['url'].rstrip('/').split('/')
+            if len(url_parts) >= 2:
+                repo_name = f"{url_parts[-2]}/{url_parts[-1]}"
+            else:
+                repo_name = url_parts[-1]
+            
+            category = categorize_url(bookmark['url'], bookmark['title'])
+            repo_data = RepositoryCreate(
+                name=repo_name,
+                url=bookmark['url'],
+                title=bookmark['title'],
+                category=category
+            )
+            try:
+                repo_crud.create_repository(db, repo_data)
+                newly_imported += 1
+            except Exception as e:
+                # Rollback the failed transaction so we can continue
+                db.rollback()
+                logger.error(f"Failed to create repository {repo_name}: {str(e)}")
         
         return ImportResponse(
             total_found=len(github_urls),
-            message=f"Found {len(github_urls)} GitHub repositories. Importing in background..."
+            duplicates_in_file=duplicates_in_file,
+            duplicates_in_db=duplicates_in_db,
+            newly_imported=newly_imported,
+            message=f"Import complete: {newly_imported} repositories imported, {duplicates_in_db} already in database, {duplicates_in_file} duplicates in file"
         )
     
     except Exception as e:
@@ -95,7 +267,6 @@ async def import_from_html(
 @app.post("/api/import/folder", response_model=ImportResponse)
 async def import_from_folder(
     folder_path: str = Query(...),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
 ):
     """Import repositories from folder containing bookmark files"""
@@ -119,33 +290,65 @@ async def import_from_folder(
         if not github_urls:
             raise HTTPException(status_code=400, detail="No GitHub URLs found in folder")
         
-        background_tasks.add_task(save_repositories, github_urls, db)
+        # Check for duplicates in the import file and database
+        seen_urls = set()
+        unique_bookmarks = []
+        duplicates_in_file = 0
         
-        return ImportResponse(
-            total_found=len(github_urls),
-            message=f"Found {len(github_urls)} GitHub repositories. Importing in background..."
-        )
-    
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-def save_repositories(bookmarks: List[dict], db: Session):
-    """Background task to save repositories to database"""
-    for bookmark in bookmarks:
-        repo_name = bookmark['url'].rstrip('/').split('/')[-1]
-        category = categorize_url(bookmark['url'], bookmark['title'])
+        for bookmark in github_urls:
+            if bookmark['url'] in seen_urls:
+                duplicates_in_file += 1
+            else:
+                seen_urls.add(bookmark['url'])
+                unique_bookmarks.append(bookmark)
         
-        # Check if already exists
-        existing = repo_crud.get_repo_by_name(db, repo_name)
-        if not existing:
+        # Check for duplicates in database
+        duplicates_in_db = 0
+        to_import = []
+        
+        for bookmark in unique_bookmarks:
+            existing = repo_crud.get_repo_by_url(db, bookmark['url'])
+            if existing:
+                duplicates_in_db += 1
+            else:
+                to_import.append(bookmark)
+        
+        # Save all repositories
+        newly_imported = 0
+        for bookmark in to_import:
+            # Extract owner/repo format
+            url_parts = bookmark['url'].rstrip('/').split('/')
+            if len(url_parts) >= 2:
+                repo_name = f"{url_parts[-2]}/{url_parts[-1]}"
+            else:
+                repo_name = url_parts[-1]
+            
+            category = categorize_url(bookmark['url'], bookmark['title'])
             repo_data = RepositoryCreate(
                 name=repo_name,
                 url=bookmark['url'],
                 title=bookmark['title'],
                 category=category
             )
-            repo_crud.create_repository(db, repo_data)
+            try:
+                repo_crud.create_repository(db, repo_data)
+                newly_imported += 1
+            except Exception as e:
+                # Rollback the failed transaction so we can continue
+                db.rollback()
+                logger.error(f"Failed to create repository {repo_name}: {str(e)}")
+        
+        return ImportResponse(
+            total_found=len(github_urls),
+            duplicates_in_file=duplicates_in_file,
+            duplicates_in_db=duplicates_in_db,
+            newly_imported=newly_imported,
+            message=f"Import complete: {newly_imported} repositories imported, {duplicates_in_db} already in database, {duplicates_in_file} duplicates in file"
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 
 # ============ REPOSITORY ENDPOINTS ============
