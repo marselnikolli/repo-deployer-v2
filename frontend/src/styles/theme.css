@@ -133,6 +133,20 @@
   --color-success-900: #074D31;
   --color-success-950: #053321;
 
+  /* Info Colors */
+  --color-info-25: #F0F9FF;
+  --color-info-50: #E0F2FE;
+  --color-info-100: #BAE6FD;
+  --color-info-200: #7DD3FC;
+  --color-info-300: #38BDF8;
+  --color-info-400: #0EA5E9;
+  --color-info-500: #0284C7;
+  --color-info-600: #0369A1;
+  --color-info-700: #075985;
+  --color-info-800: #0C4A6E;
+  --color-info-900: #082F49;
+  --color-info-950: #0C2D42;
+
   /* Additional palette colors for categories */
   --color-blue-50: #EFF8FF;
   --color-blue-100: #D1E9FF;
