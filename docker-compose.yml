@@ -26,9 +26,6 @@ services:
         limits:
           cpus: '1'
           memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
 
   # Redis Cache
   redis:
@@ -49,9 +46,6 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
     command: redis-server --appendonly yes
 
   # FastAPI Backend
@@ -75,9 +69,6 @@ services:
         limits:
           cpus: '2'
           memory: 2G
-        reservations:
-          cpus: '1'
-          memory: 1G
     ports:
       - "8000:8000"
     depends_on:
@@ -107,9 +98,6 @@ services:
         limits:
           cpus: '1'
           memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 256M
     environment:
       REACT_APP_API_URL: http://api:8000
 

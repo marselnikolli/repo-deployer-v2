@@ -20,8 +20,7 @@ engine = create_engine(
     pool_pre_ping=True,           # Verify connections before use
     pool_size=10,                 # Number of persistent connections
     max_overflow=20,              # Allow temporary overflow connections
-    pool_recycle=3600,            # Recycle connections after 1 hour to prevent stale connections
-    connect_args={"timeout": 10}  # Connection timeout in seconds
+    pool_recycle=3600             # Recycle connections after 1 hour to prevent stale connections
 )
 
 # Session factory
