@@ -54,9 +54,10 @@ A comprehensive platform for discovering, managing, and deploying repositories w
 - **Configuration Details** - Database setup, API key configuration, etc.
 
 ### 👥 Team & Collaboration
-- **Team Management** - Create and manage teams
+- **Team Management** - ✅ Create and manage teams
 - **Team Collections** - Organize repositories by team projects
 - **Member Roles** - Role-based access control (Admin, Member, Viewer)
+- **Team Members** - ✅ Add and manage team members with roles
 - **Activity Tracking** - Audit logs of team actions
 
 ### 🔔 Notifications & Alerts
