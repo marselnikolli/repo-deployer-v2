@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
-from models import Collection, Repository, User, Team
+from models import Collection, Repository, User
 from database import SessionLocal
 import re
 
@@ -29,8 +29,7 @@ class CollectionService:
         filter_config: Dict[str, Any] = None,
         is_public: bool = False,
         is_template: bool = False,
-        auto_populate: bool = False,
-        team_id: int = None
+        auto_populate: bool = False
     ) -> Collection:
         """Create a new collection"""
         # Generate slug from name
@@ -38,10 +37,8 @@ class CollectionService:
         
         # Check for duplicate slug
         existing = self.db.query(Collection).filter(
-            and_(
-                Collection.slug == slug,
-                or_(Collection.user_id == user_id, Collection.team_id == team_id)
-            )
+            Collection.slug == slug,
+            Collection.user_id == user_id
         ).first()
         
         if existing:
@@ -53,7 +50,6 @@ class CollectionService:
         
         collection = Collection(
             user_id=user_id,
-            team_id=team_id,
             name=name,
             description=description,
             slug=slug,
@@ -85,25 +81,15 @@ class CollectionService:
     def list_collections(
         self,
         user_id: int = None,
-        team_id: int = None,
         include_public: bool = False,
         limit: int = 50,
         offset: int = 0
     ) -> List[Collection]:
-        """List collections for user/team"""
+        """List collections for user"""
         query = self.db.query(Collection)
         
-        if user_id and team_id:
-            query = query.filter(
-                or_(
-                    Collection.user_id == user_id,
-                    Collection.team_id == team_id
-                )
-            )
-        elif user_id:
+        if user_id:
             query = query.filter_by(user_id=user_id)
-        elif team_id:
-            query = query.filter_by(team_id=team_id)
         
         if include_public:
             query = query.filter(Collection.is_public == True)

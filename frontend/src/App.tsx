@@ -10,7 +10,6 @@ import { DeploymentPage } from '@/pages/DeploymentPage'
 import { SchedulerPage } from '@/pages/SchedulerPage'
 import { NotificationSettingsPage } from '@/pages/NotificationSettingsPage'
 import { SearchPage } from '@/pages/SearchPage'
-import TeamsPage from '@/pages/TeamsPage'
 import ImportsPage from '@/pages/ImportsPage'
 import CollectionsPage from '@/pages/CollectionsPage'
 import ProtectedRoute from '@/components/ProtectedRoute'
@@ -64,14 +63,6 @@ function App() {
           element={
             <ProtectedRoute>
               <SearchPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/teams"
-          element={
-            <ProtectedRoute>
-              <TeamsPage />
             </ProtectedRoute>
           }
         />
