@@ -132,25 +132,25 @@ export default function TeamsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-brand-500)]"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-[#0f172a] dark:to-[#1e293b] p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <Heading level={1} className="text-3xl font-bold text-slate-900 mb-2">
+            <Heading level={1} className="text-3xl font-bold text-[var(--color-fg-primary)] mb-2">
               Teams
             </Heading>
-            <Text className="text-slate-600">Manage your teams and collaborate with others</Text>
+            <Text className="text-[var(--color-fg-tertiary)]">Manage your teams and collaborate with others</Text>
           </div>
           <Button
             onPress={() => setIsCreateDialogOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-white rounded-lg font-medium transition-colors"
           >
             <PlusIcon className="w-5 h-5" />
             New Team
@@ -159,22 +159,22 @@ export default function TeamsPage() {
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <Text className="text-red-800">{error}</Text>
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg">
+            <Text className="text-red-800 dark:text-red-200">{error}</Text>
           </div>
         )}
 
         {/* Teams Grid */}
         {teams.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-slate-200">
-            <UsersIcon className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-            <Heading level={3} className="text-lg font-semibold text-slate-900 mb-2">
+          <div className="text-center py-12 bg-[var(--color-bg-primary)] rounded-lg border border-[var(--color-border-primary)]">
+            <UsersIcon className="w-12 h-12 mx-auto text-[var(--color-fg-quaternary)] mb-4" />
+            <Heading level={3} className="text-lg font-semibold text-[var(--color-fg-primary)] mb-2">
               No teams yet
             </Heading>
-            <Text className="text-slate-600 mb-6">Create your first team to get started collaborating</Text>
+            <Text className="text-[var(--color-fg-tertiary)] mb-6">Create your first team to get started collaborating</Text>
             <Button
               onPress={() => setIsCreateDialogOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-[color:var(--color-fg-white)] rounded-lg font-medium transition-colors"
             >
               <PlusIcon className="w-5 h-5" />
               Create Team
@@ -185,42 +185,42 @@ export default function TeamsPage() {
             {teams.map((team) => (
               <div
                 key={team.id}
-                className="bg-white rounded-lg border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all p-6"
+                className="bg-[var(--color-bg-primary)] rounded-lg border border-[var(--color-border-primary)] hover:border-[var(--color-border-secondary)] hover:shadow-md dark:shadow-lg transition-all p-6"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <Heading level={3} className="text-lg font-semibold text-slate-900 mb-1">
+                    <Heading level={3} className="text-lg font-semibold text-[var(--color-fg-primary)] mb-1">
                       {team.name}
                     </Heading>
-                    <Text className="text-sm text-slate-500 mb-2">@{team.slug}</Text>
+                    <Text className="text-sm text-[var(--color-fg-quaternary)] mb-2">@{team.slug}</Text>
                     {team.description && (
-                      <Text className="text-slate-600 text-sm mb-4">{team.description}</Text>
+                      <Text className="text-[var(--color-fg-tertiary)] text-sm mb-4">{team.description}</Text>
                     )}
                   </div>
                   <div className="flex gap-2">
                     {team.is_public ? (
-                      <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded">
+                      <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded">
                         Public
                       </span>
                     ) : (
-                      <span className="inline-block px-2 py-1 text-xs font-medium bg-slate-50 text-slate-700 rounded">
+                      <span className="inline-block px-2 py-1 text-xs font-medium bg-[var(--color-bg-secondary)] text-[var(--color-fg-secondary)] rounded">
                         Private
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="border-t border-slate-100 pt-4 flex gap-3">
+                <div className="border-t border-[var(--color-border-primary)] pt-4 flex gap-3">
                   <Button
                     onPress={() => handleShowMembers(team)}
-                    className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors text-sm"
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-border-primary)] text-[var(--color-fg-secondary)] rounded-lg font-medium transition-colors text-sm"
                   >
                     <UsersIcon className="w-4 h-4" />
                     Members
                   </Button>
                   <Button
                     onPress={() => handleDeleteTeam(team.id)}
-                    className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-medium transition-colors"
+                    className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-950 hover:bg-red-100 dark:hover:bg-red-900 text-red-700 dark:text-red-400 rounded-lg font-medium transition-colors"
                   >
                     <TrashIcon className="w-4 h-4" />
                   </Button>
@@ -235,42 +235,42 @@ export default function TeamsPage() {
       {isCreateDialogOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4 bg-black/50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-              <Heading level={2} className="text-2xl font-bold text-slate-900 mb-4">
+            <div className="bg-[var(--color-bg-primary)] rounded-lg shadow-xl dark:shadow-2xl max-w-md w-full p-6">
+              <Heading level={2} className="text-2xl font-bold text-[var(--color-fg-primary)] mb-4">
                 Create New Team
               </Heading>
 
               <form onSubmit={handleCreateTeam} className="space-y-4">
                 <div>
-                  <Label className="block text-sm font-medium text-slate-700 mb-1">Team Name *</Label>
+                  <Label className="block text-sm font-medium text-[var(--color-fg-primary)] mb-1">Team Name *</Label>
                   <Input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g., My Development Team"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-[var(--color-border-primary)] bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]"
                   />
                 </div>
 
                 <div>
-                  <Label className="block text-sm font-medium text-slate-700 mb-1">Team Slug *</Label>
+                  <Label className="block text-sm font-medium text-[var(--color-fg-primary)] mb-1">Team Slug *</Label>
                   <Input
                     type="text"
                     value={formData.slug}
                     onChange={(e) => setFormData({ ...formData, slug: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
                     placeholder="e.g., my-dev-team"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-[var(--color-border-primary)] bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]"
                   />
                 </div>
 
                 <div>
-                  <Label className="block text-sm font-medium text-slate-700 mb-1">Description</Label>
+                  <Label className="block text-sm font-medium text-[var(--color-fg-primary)] mb-1">Description</Label>
                   <Input
                     type="text"
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     placeholder="Team description"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-[var(--color-border-primary)] bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]"
                   />
                 </div>
 
@@ -278,13 +278,13 @@ export default function TeamsPage() {
                   <Button
                     type="button"
                     onPress={() => setIsCreateDialogOpen(false)}
-                    className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium transition-colors"
+                    className="flex-1 px-4 py-2 border border-[var(--color-border-primary)] text-[var(--color-fg-primary)] rounded-lg hover:bg-[var(--color-bg-secondary)] font-medium transition-colors"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="submit"
-                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                    className="flex-1 px-4 py-2 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-[color:var(--color-fg-white)] rounded-lg font-medium transition-colors"
                   >
                     Create Team
                   </Button>
@@ -299,27 +299,27 @@ export default function TeamsPage() {
       {isMembersDialogOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4 bg-black/50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 max-h-96 overflow-y-auto">
-              <Heading level={2} className="text-2xl font-bold text-slate-900 mb-4">
+            <div className="bg-[var(--color-bg-primary)] rounded-lg shadow-xl dark:shadow-2xl max-w-md w-full p-6 max-h-96 overflow-y-auto">
+              <Heading level={2} className="text-2xl font-bold text-[var(--color-fg-primary)] mb-4">
                 {selectedTeam?.name} Members
               </Heading>
 
               {membersLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-brand-500)]"></div>
                 </div>
               ) : teamMembers.length === 0 ? (
-                <Text className="text-slate-600 text-center py-8">No members yet</Text>
+                <Text className="text-[var(--color-fg-tertiary)] text-center py-8">No members yet</Text>
               ) : (
                 <div className="space-y-3">
                   {teamMembers.map((member) => (
-                    <div key={member.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                    <div key={member.id} className="flex items-center justify-between p-3 bg-[var(--color-bg-secondary)] rounded-lg">
                       <div className="flex-1 min-w-0">
-                        <Text className="font-medium text-slate-900">{member.full_name}</Text>
-                        <Text className="text-sm text-slate-600">{member.email}</Text>
+                        <Text className="font-medium text-[var(--color-fg-primary)]">{member.full_name}</Text>
+                        <Text className="text-sm text-[var(--color-fg-tertiary)]">{member.email}</Text>
                       </div>
                       <div className="flex gap-2">
-                        <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded">
+                        <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded">
                           {member.role}
                         </span>
                       </div>
@@ -328,10 +328,10 @@ export default function TeamsPage() {
                 </div>
               )}
 
-              <div className="border-t border-slate-100 mt-4 pt-4">
+              <div className="border-t border-[var(--color-border-primary)] mt-4 pt-4">
                 <Button
                   onPress={() => setIsMembersDialogOpen(false)}
-                  className="w-full px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
+                  className="w-full px-4 py-2 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-border-primary)] text-[var(--color-fg-secondary)] rounded-lg font-medium transition-colors"
                 >
                   Close
                 </Button>
