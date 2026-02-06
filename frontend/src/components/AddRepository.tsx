@@ -35,6 +35,8 @@ const TOPIC_TO_CATEGORY: Record<string, string> = {
 export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => void }) {
   const [loading, setLoading] = useState(false)
   const [fetchingMetadata, setFetchingMetadata] = useState(false)
+  const [urlValidated, setUrlValidated] = useState(false)
+  const [urlValidationError, setUrlValidationError] = useState<string | null>(null)
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [formData, setFormData] = useState({
     name: '',
@@ -66,9 +68,14 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
   // Fetch repository metadata from GitHub API
   const fetchRepositoryMetadata = async (url: string) => {
     const repoInfo = extractRepoInfo(url)
-    if (!repoInfo) return
+    if (!repoInfo) {
+      setUrlValidated(false)
+      setUrlValidationError('Invalid GitHub URL format')
+      return
+    }
 
     setFetchingMetadata(true)
+    setUrlValidationError(null)
     try {
       const response = await fetch(
         `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}`,
@@ -80,19 +87,21 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
       )
 
       if (!response.ok) {
+        setUrlValidated(false)
+        setUrlValidationError('Repository not found on GitHub')
         setFetchingMetadata(false)
         return
       }
 
       const data = await response.json()
 
-      // Update description if available
-      if (data.description) {
-        setFormData(prev => ({
-          ...prev,
-          description: data.description || '',
-        }))
-      }
+      // Auto-populate name if empty
+      setFormData(prev => ({
+        ...prev,
+        name: prev.name || repoInfo.repo,
+        title: prev.title || data.name || repoInfo.repo,
+        description: data.description || prev.description || '',
+      }))
 
       // Detect category from topics
       if (data.topics && Array.isArray(data.topics) && data.topics.length > 0) {
@@ -107,9 +116,13 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
           }
         }
       }
+
+      // Mark URL as validated
+      setUrlValidated(true)
     } catch (error) {
-      // Silently fail - GitHub API might be rate limited or URL might be invalid
       console.debug('Failed to fetch GitHub metadata:', error)
+      setUrlValidated(false)
+      setUrlValidationError('Failed to validate repository')
     } finally {
       setFetchingMetadata(false)
     }
@@ -161,6 +174,12 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
       return
     }
 
+    // Check if URL was validated
+    if (!urlValidated) {
+      toast.error('Please enter a valid GitHub repository URL')
+      return
+    }
+
     try {
       setLoading(true)
       await repositoryApi.create({
@@ -181,6 +200,8 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
         category: 'other',
         description: '',
       })
+      setUrlValidated(false)
+      setUrlValidationError(null)
 
       // Refresh repository list
       onRepositoryAdded()
@@ -200,6 +221,21 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
         <p className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)] mt-1">
           Manually add a GitHub repository to your collection
         </p>
+      </div>
+
+      {/* Info notification */}
+      <div className="p-4 rounded-[var(--radius-md)] bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+        <div className="flex gap-3">
+          <div className="flex-shrink-0">
+            <span className="text-lg text-blue-600 dark:text-blue-400">ℹ️</span>
+          </div>
+          <div>
+            <h3 className="text-[length:var(--text-sm)] font-semibold text-blue-900 dark:text-blue-200">Start with GitHub URL</h3>
+            <p className="text-[length:var(--text-sm)] text-blue-800 dark:text-blue-300 mt-1">
+              Enter a valid GitHub repository URL first. The form will automatically validate the repository and populate the other fields (name, title, description, and category) for you.
+            </p>
+          </div>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl">
@@ -231,7 +267,9 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
               value={formData.url}
               onChange={handleInputChange}
               placeholder="e.g., https://github.com/username/repo-name"
-              className="w-full px-4 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] dark:bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] dark:text-[var(--color-fg-primary)] placeholder-[var(--color-fg-quaternary)] dark:placeholder-[var(--color-fg-quaternary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)]"
+              className={`w-full px-4 py-2 text-[length:var(--text-sm)] border rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] dark:bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] dark:text-[var(--color-fg-primary)] placeholder-[var(--color-fg-quaternary)] dark:placeholder-[var(--color-fg-quaternary)] focus:outline-none focus:ring-1 ${
+                urlValidationError ? 'border-red-500 focus:ring-red-500' : 'border-[var(--color-border-primary)] focus:ring-[var(--color-brand-500)]'
+              } ${urlValidated && !urlValidationError ? 'border-green-500 focus:ring-green-500' : ''}`}
               required
             />
             {fetchingMetadata && (
@@ -241,9 +279,25 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
                 </div>
               </div>
             )}
+            {!fetchingMetadata && urlValidated && !urlValidationError && formData.url && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <span className="text-lg text-green-500">✓</span>
+              </div>
+            )}
+            {!fetchingMetadata && urlValidationError && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <span className="text-lg text-red-500">✕</span>
+              </div>
+            )}
           </div>
           {fetchingMetadata && (
-            <p className="text-xs text-[var(--color-fg-quaternary)] mt-1">Fetching repository info...</p>
+            <p className="text-xs text-[var(--color-fg-quaternary)] mt-1">Validating repository...</p>
+          )}
+          {urlValidationError && (
+            <p className="text-xs text-red-500 mt-1">{urlValidationError}</p>
+          )}
+          {urlValidated && !urlValidationError && (
+            <p className="text-xs text-green-600 mt-1">✓ Repository found and validated</p>
           )}
         </div>
 
@@ -308,8 +362,12 @@ export function AddRepository({ onRepositoryAdded }: { onRepositoryAdded: () => 
 
         <button
           type="submit"
-          disabled={loading}
-          className="px-6 py-2 text-[length:var(--text-sm)] font-medium text-[color:var(--color-fg-white)] bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] disabled:bg-[var(--color-fg-disabled)] rounded-[var(--radius-md)] transition-colors"
+          disabled={loading || !urlValidated}
+          className={`px-6 py-2 text-[length:var(--text-sm)] font-medium text-[color:var(--color-fg-white)] rounded-[var(--radius-md)] transition-colors ${
+            loading || !urlValidated
+              ? 'bg-[var(--color-fg-disabled)] cursor-not-allowed'
+              : 'bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)]'
+          }`}
         >
           {loading ? 'Adding...' : 'Add Repository'}
         </button>
