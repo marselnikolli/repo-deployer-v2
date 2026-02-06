@@ -54,6 +54,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: repo-deployer-api
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/repo_deployer
       REDIS_URL: redis://redis:6379/0

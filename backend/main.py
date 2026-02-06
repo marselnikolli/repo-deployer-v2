@@ -482,116 +482,282 @@ async def bulk_delete(
 @app.post("/api/bulk/health-check")
 async def bulk_health_check(
     action: BulkActionRequest,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
 ):
-    """Check health status of multiple repositories by calling GitHub API"""
+    """Check health status of multiple repositories - returns job_id for progress tracking"""
+    import uuid
+    from services.cache_service import CacheService
+    
+    # Generate unique job ID for tracking progress
+    job_id = str(uuid.uuid4())
+    
+    logger.info(f"[HEALTH-CHECK] Starting bulk health check")
+    logger.info(f"[HEALTH-CHECK] Job ID: {job_id}")
+    logger.info(f"[HEALTH-CHECK] Repositories to scan: {len(action.repository_ids)}")
+    
+    # Initialize progress tracking in cache
+    CacheService.set(
+        f"health_check:{job_id}",
+        {
+            "status": "running",
+            "current": 0,
+            "total": len(action.repository_ids),
+            "healthy": 0,
+            "archived": 0,
+            "not_found": 0,
+            "errors": 0,
+            "message": "Starting health checks..."
+        },
+        ttl=3600
+    )
+    
+    logger.info(f"[HEALTH-CHECK] Progress tracking initialized in cache for job {job_id}")
+    
+    # Schedule background task to perform health check
+    background_tasks.add_task(
+        perform_bulk_health_check,
+        job_id,
+        action.repository_ids
+    )
+    
+    logger.info(f"[HEALTH-CHECK] Background task scheduled for job {job_id}")
+    
+    return {"job_id": job_id, "message": "Health check started"}
+
+
+@app.get("/api/bulk/health-check/{job_id}/progress")
+async def get_health_check_progress(job_id: str):
+    """Get progress of a running health check"""
+    from services.cache_service import CacheService
+    
+    progress = CacheService.get(f"health_check:{job_id}")
+    
+    if not progress:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    
+    return progress
+
+
+async def perform_bulk_health_check(job_id: str, repository_ids: list):
+    """Background task to perform health check with rate limiting and progress tracking"""
     try:
         import requests
         import re
+        import time
         from datetime import datetime
+        from services.cache_service import CacheService
+        from database import SessionLocal
         
-        repos = db.query(Repository).filter(Repository.id.in_(action.repository_ids)).all()
+        logger.info(f"[HEALTH-CHECK-TASK] Starting background task for job {job_id}")
+        logger.info(f"[HEALTH-CHECK-TASK] Requested repository IDs: {len(repository_ids)}")
+        
+        db = SessionLocal()
+        
+        repos = db.query(Repository).filter(Repository.id.in_(repository_ids)).all()
+        logger.info(f"[HEALTH-CHECK-TASK] Found {len(repos)} repositories in database")
+        
+        # GitHub API Rate Limiting:
+        # - Unauthenticated: 60 req/hour (1 per minute)
+        # - Authenticated: 5000 req/hour (1.4 per second)
+        # We use 150ms delay = ~6.7 req/sec (safe for authenticated, respects limits)
+        GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', None)  # Optional GitHub token for higher limits
+        REQUEST_DELAY = 0.15  # 150ms delay between requests (~6.7 req/sec)
+        CHUNK_SIZE = 50  # Process in chunks of 50, pause between chunks
+        CHUNK_DELAY = 2  # 2 second delay between chunks
+        
+        headers = {}
+        if GITHUB_TOKEN:
+            headers['Authorization'] = f'token {GITHUB_TOKEN}'
+            logger.info(f"[GITHUB-API] Using GitHub authenticated requests (5000 req/hour limit)")
+        else:
+            logger.info(f"[GITHUB-API] Using GitHub unauthenticated requests (60 req/hour limit)")
+        
+        logger.info(f"[RATE-LIMITING] REQUEST_DELAY={REQUEST_DELAY}s, CHUNK_SIZE={CHUNK_SIZE}, CHUNK_DELAY={CHUNK_DELAY}s")
         
         healthy_count = 0
         archived_count = 0
         not_found_count = 0
-        repo_updates = []  # Batch updates for bulk insertion
+        error_count = 0
+        rate_limited = False
+        repo_updates = []
         
-        for repo in repos:
-            repo_update = {"id": repo.id}
+        logger.info(f"[HEALTH-CHECK-TASK] Starting to process {len(repos)} repositories")
+        logger.info(f"[HEALTH-CHECK-TASK] Will process in {(len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE} chunks")
+        
+        # Process repos in chunks
+        for chunk_idx in range(0, len(repos), CHUNK_SIZE):
+            chunk = repos[chunk_idx:chunk_idx + CHUNK_SIZE]
+            chunk_num = (chunk_idx // CHUNK_SIZE) + 1
+            total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
+            logger.info(f"[HEALTH-CHECK-CHUNK] Processing chunk {chunk_num}/{total_chunks} - {len(chunk)} repos")
+            chunk_num = (chunk_idx // CHUNK_SIZE) + 1
+            total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
+            logger.info(f"[HEALTH-CHECK-CHUNK] Processing chunk {chunk_num}/{total_chunks} - {len(chunk)} repos")
             
-            try:
-                # Parse GitHub URL to extract owner and repo name
-                url = repo.url.rstrip('/')
-                if url.endswith('.git'):
-                    url = url[:-4]
+            for idx, repo in enumerate(chunk):
+                repo_update = {"id": repo.id}
+                global_idx = chunk_idx + idx
                 
-                # Extract from https URL or git@github.com URL
-                https_match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
-                ssh_match = re.search(r'git@github\.com:([^/]+)/([^/]+)', url)
-                
-                if https_match:
-                    owner, repo_name = https_match.group(1), https_match.group(2)
-                elif ssh_match:
-                    owner, repo_name = ssh_match.group(1), ssh_match.group(2)
-                else:
-                    # Not a GitHub URL, mark as unknown
-                    repo_update["health_status"] = "unknown"
-                    repo_update["last_health_check"] = datetime.utcnow()
-                    repo_updates.append(repo_update)
-                    continue
-                
-                # Call GitHub API to check repository status
-                api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
-                response = requests.get(api_url, timeout=10)
-                
-                if response.status_code == 200:
-                    # Repository exists
-                    data = response.json()
+                try:
+                    # Update progress
+                    progress_msg = f"Checking {repo.name}..."
+                    if rate_limited:
+                        progress_msg += " (rate limited, slowing down)"
                     
-                    # Update repository metadata
-                    repo_update.update({
-                        "archived": data.get('archived', False),
-                        "stars": data.get('stargazers_count', 0),
-                        "forks": data.get('forks_count', 0),
-                        "watchers": data.get('watchers_count', 0),
-                        "language": data.get('language'),
-                        "topics": data.get('topics', []),
-                        "license": data.get('license', {}).get('name') if data.get('license') else None,
-                        "is_fork": data.get('fork', False),
-                        "open_issues": data.get('open_issues_count', 0),
-                        "default_branch": data.get('default_branch', 'main'),
-                        "last_metadata_sync": datetime.utcnow()
-                    })
+                    CacheService.set(
+                        f"health_check:{job_id}",
+                        {
+                            "status": "running",
+                            "current": global_idx,
+                            "total": len(repos),
+                            "healthy": healthy_count,
+                            "archived": archived_count,
+                            "not_found": not_found_count,
+                            "errors": error_count,
+                            "rate_limited": rate_limited,
+                            "message": progress_msg
+                        },
+                        ttl=3600
+                    )
                     
-                    if data.get('created_at'):
-                        from datetime import datetime as dt
-                        repo_update["github_created_at"] = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
-                    if data.get('updated_at'):
-                        from datetime import datetime as dt
-                        repo_update["github_updated_at"] = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
-                    if data.get('pushed_at'):
-                        from datetime import datetime as dt
-                        repo_update["github_pushed_at"] = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
+                    # Parse GitHub URL to extract owner and repo name
+                    url = repo.url.rstrip('/')
+                    if url.endswith('.git'):
+                        url = url[:-4]
                     
-                    # Set health status
-                    if data.get('archived'):
-                        repo_update["health_status"] = "archived"
-                        archived_count += 1
+                    # Extract from https URL or git@github.com URL
+                    https_match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
+                    ssh_match = re.search(r'git@github\.com:([^/]+)/([^/]+)', url)
+                    
+                    if https_match:
+                        owner, repo_name = https_match.group(1), https_match.group(2)
+                    elif ssh_match:
+                        owner, repo_name = ssh_match.group(1), ssh_match.group(2)
                     else:
-                        repo_update["health_status"] = "healthy"
-                        healthy_count += 1
+                        # Not a GitHub URL, mark as unknown
+                        repo_update["health_status"] = "unknown"
+                        repo_update["last_health_check"] = datetime.utcnow()
+                        repo_updates.append(repo_update)
+                        continue
+                    
+                    # Call GitHub API to check repository status
+                    api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+                    response = requests.get(api_url, timeout=10, headers=headers)
+                    
+                    # Check rate limiting (429 = Too Many Requests)
+                    if response.status_code == 429:
+                        rate_limited = True
+                        # Get retry-after header if available
+                        retry_after = int(response.headers.get('Retry-After', 60))
+                        logger.warning(f"GitHub API rate limited, sleeping for {retry_after}s")
+                        time.sleep(min(retry_after, 5))  # Cap at 5 seconds per hit
+                        
+                        # Retry this repo
+                        response = requests.get(api_url, timeout=10, headers=headers)
+                    
+                    if response.status_code == 200:
+                        # Repository exists
+                        data = response.json()
+                        
+                        # Update repository metadata
+                        repo_update.update({
+                            "archived": data.get('archived', False),
+                            "stars": data.get('stargazers_count', 0),
+                            "forks": data.get('forks_count', 0),
+                            "watchers": data.get('watchers_count', 0),
+                            "language": data.get('language'),
+                            "topics": data.get('topics', []),
+                            "license": data.get('license', {}).get('name') if data.get('license') else None,
+                            "is_fork": data.get('fork', False),
+                            "open_issues": data.get('open_issues_count', 0),
+                            "default_branch": data.get('default_branch', 'main'),
+                            "last_metadata_sync": datetime.utcnow()
+                        })
+                        
+                        if data.get('created_at'):
+                            from datetime import datetime as dt
+                            repo_update["github_created_at"] = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
+                        if data.get('updated_at'):
+                            from datetime import datetime as dt
+                            repo_update["github_updated_at"] = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
+                        if data.get('pushed_at'):
+                            from datetime import datetime as dt
+                            repo_update["github_pushed_at"] = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
+                        
+                        # Set health status
+                        if data.get('archived'):
+                            repo_update["health_status"] = "archived"
+                            archived_count += 1
+                        else:
+                            repo_update["health_status"] = "healthy"
+                            healthy_count += 1
+                    
+                    elif response.status_code == 404:
+                        # Repository not found
+                        repo_update["health_status"] = "not_found"
+                        not_found_count += 1
+                    else:
+                        # Other API error, keep existing status
+                        logger.warning(f"API error for {repo.name}: {response.status_code}")
+                        repo_update["health_status"] = "unknown"
+                        error_count += 1
+                    
+                    # Add delay between API calls to respect rate limits
+                    time.sleep(REQUEST_DELAY)
                 
-                elif response.status_code == 404:
-                    # Repository not found
-                    repo_update["health_status"] = "not_found"
-                    not_found_count += 1
-                else:
-                    # Other API error, keep existing status
+                except Exception as e:
+                    logger.error(f"Error checking repository {repo.id}: {e}")
                     repo_update["health_status"] = "unknown"
+                    error_count += 1
                 
-            except Exception as e:
-                logger.error(f"Error checking repository {repo.id}: {e}")
-                repo_update["health_status"] = "unknown"
+                repo_update["last_health_check"] = datetime.utcnow()
+                repo_updates.append(repo_update)
             
-            repo_update["last_health_check"] = datetime.utcnow()
-            repo_updates.append(repo_update)
+            # Pause between chunks
+            if chunk_idx + CHUNK_SIZE < len(repos):
+                chunk_num = (chunk_idx // CHUNK_SIZE) + 1
+                total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
+                logger.info(f"[HEALTH-CHECK-CHUNK] Completed chunk {chunk_num}/{total_chunks}, pausing {CHUNK_DELAY}s before next chunk")
+                time.sleep(CHUNK_DELAY)
         
         # Batch update all repositories at once
         if repo_updates:
             db.bulk_update_mappings(Repository, repo_updates)
         db.commit()
         
-        return {
-            "message": f"Health check completed for {len(repos)} repositories",
-            "healthy": healthy_count,
-            "archived": archived_count,
-            "not_found": not_found_count,
-            "total": len(repos)
-        }
+        # Mark as completed
+        logger.info(f"[HEALTH-CHECK-TASK] Updating progress - marking job {job_id} as completed")
+        CacheService.set(
+            f"health_check:{job_id}",
+            {
+                "status": "completed",
+                "current": len(repos),
+                "total": len(repos),
+                "healthy": healthy_count,
+                "archived": archived_count,
+                "not_found": not_found_count,
+                "errors": error_count,
+                "message": f"✓ Complete: {healthy_count} healthy, {archived_count} archived, {not_found_count} removed (404)"
+            },
+            ttl=3600
+        )
+        
+        logger.info(f"[HEALTH-CHECK-COMPLETE] Job {job_id} completed successfully")
+        logger.info(f"[HEALTH-CHECK-SUMMARY] Healthy: {healthy_count}, Archived: {archived_count}, Not Found: {not_found_count}, Errors: {error_count}")
+        db.close()
     except Exception as e:
-        logger.error(f"Bulk health check error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"[HEALTH-CHECK-ERROR] Job {job_id} failed with error: {str(e)}")
+        logger.error(f"[HEALTH-CHECK-ERROR] Traceback: ", exc_info=True)
+        CacheService.set(
+            f"health_check:{job_id}",
+            {
+                "status": "failed",
+                "error": str(e),
+                "message": "Health check failed"
+            },
+            ttl=3600
+        )
 
 
 # ============ GIT OPERATIONS ============

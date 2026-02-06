@@ -160,12 +160,14 @@ export function RepositoryList() {
       try {
         const response = await generalApi.importJobs()
         const jobs = response.data || []
+        console.log('[IMPORT-POLLING] Jobs poll cycle - jobs count:', jobs.length, 'jobs:', jobs)
         
         // Track previous jobs to detect newly completed imports
         const previousJobs = previousImportJobsRef.current
         const wasImporting = previousJobs.some(j => j.status === 'running' || j.status === 'pending')
         const nowRunning = jobs.some(j => j.status === 'running' || j.status === 'pending')
         const justCompleted = wasImporting && !nowRunning && jobs.length > 0
+        console.log('[IMPORT-POLLING] Completion detection - wasImporting:', wasImporting, 'nowRunning:', nowRunning, 'justCompleted:', justCompleted, 'previousJobs:', previousJobs)
         
         // Update the ref with current jobs
         previousImportJobsRef.current = jobs
@@ -173,9 +175,20 @@ export function RepositoryList() {
         
         // Auto-trigger health check when import completes
         if (justCompleted && !autoCheckProgress.isRunning) {
-          console.log('Import job completed! Triggering auto health check...')
+          console.log('[IMPORT-COMPLETE] ===== Import job completed! =====')
+          console.log('[IMPORT-COMPLETE] Current autoCheckProgress:', autoCheckProgress)
+          console.log('[IMPORT-COMPLETE] wasImporting:', wasImporting)
+          console.log('[IMPORT-COMPLETE] nowRunning:', nowRunning)
+          console.log('[IMPORT-COMPLETE] justCompleted:', justCompleted)
+          console.log('[IMPORT-COMPLETE] jobs count:', jobs.length)
+          console.log('[IMPORT-COMPLETE] Job details:', jobs)
+          console.log('[IMPORT-COMPLETE] Triggering auto health check...')
           toast.success('Import completed! Starting automatic health and metadata check...')
           triggerAutoHealthCheck()
+        } else {
+          if (justCompleted) {
+            console.log('[IMPORT-POLLING] Skipping auto health check: autoCheckProgress.isRunning is true')
+          }
         }
       } catch (error: any) {
         // Only log non-401 errors (401 means user not logged in)
@@ -203,6 +216,16 @@ export function RepositoryList() {
     setCurrentPage(1)
     fetchRepositories()
   }, [debouncedQuery])
+
+  // Log health check progress changes for debugging
+  useEffect(() => {
+    console.log('[DEBUG-AUTOCHECK] autoCheckProgress state changed:', {
+      isRunning: autoCheckProgress.isRunning,
+      current: autoCheckProgress.current,
+      total: autoCheckProgress.total,
+      status: autoCheckProgress.status
+    })
+  }, [autoCheckProgress])
 
   const fetchRepositories = async () => {
     try {
@@ -349,40 +372,126 @@ export function RepositoryList() {
 
   const triggerAutoHealthCheck = async () => {
     try {
+      console.log('[HEALTH-CHECK-FRONTEND] ===== Starting auto health check =====')
+      console.log('[HEALTH-CHECK-FRONTEND] Current autoCheckProgress state:', {
+        isRunning: autoCheckProgress.isRunning,
+        current: autoCheckProgress.current,
+        total: autoCheckProgress.total,
+        status: autoCheckProgress.status
+      })
+      
       setAutoCheckProgress({isRunning: true, current: 0, total: 0, status: 'Fetching repositories...'})
+      console.log('[HEALTH-CHECK-FRONTEND] State set to: fetching repositories')
       
       // Fetch all repositories to get all IDs
+      console.log('[HEALTH-CHECK-FRONTEND] Calling repositoryApi.list...')
       const allReposResponse = await repositoryApi.list(undefined, 0, 10000)
+      console.log('[HEALTH-CHECK-FRONTEND] Response received:', {
+        hasData: !!allReposResponse.data,
+        dataLength: Array.isArray(allReposResponse.data) ? allReposResponse.data.length : 'not an array',
+        fullResponse: allReposResponse
+      })
+      
       const allRepos = allReposResponse.data || []
       const totalToCheck = allRepos.length
+      console.log(`[HEALTH-CHECK-FRONTEND] Found ${totalToCheck} repositories to check`)
       
       if (totalToCheck === 0) {
+        console.warn('[HEALTH-CHECK-FRONTEND] No repositories to check - aborting')
         setAutoCheckProgress({isRunning: false, current: 0, total: 0, status: 'No repositories to check'})
         return
       }
       
       setAutoCheckProgress({isRunning: true, current: 0, total: totalToCheck, status: 'Starting health checks...'})
+      console.log(`[HEALTH-CHECK-FRONTEND] Initiating health check for ${totalToCheck} repositories`)
       
       // Get all repo IDs
       const allIds = allRepos.map(r => r.id)
+      console.log(`[HEALTH-CHECK-FRONTEND] Repository IDs collected: ${allIds.length}`)
+      console.log(`[HEALTH-CHECK-FRONTEND] IDs: ${allIds.join(', ')}`)
       
-      // Perform bulk health check
-      const response = await bulkApi.healthCheck(allIds)
-      setAutoCheckProgress({isRunning: true, current: totalToCheck, total: totalToCheck, status: 'Health checks complete, syncing metadata...'})
+      // Start async health check and get job ID
+      console.log('[HEALTH-CHECK-FRONTEND] Calling bulkApi.healthCheck API...')
+      const jobResponse = await bulkApi.healthCheck(allIds)
+      console.log('[HEALTH-CHECK-FRONTEND] Health check API response:', {
+        status: jobResponse?.status,
+        data: jobResponse?.data,
+        fullResponse: jobResponse
+      })
       
-      // Fetch fresh data
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      fetchRepositories()
+      const jobId = jobResponse.data?.job_id
+      console.log(`[HEALTH-CHECK-FRONTEND] Extracting job_id from response: "${jobId}"`)
       
-      toast.success(
-        `✓ Auto-check complete: ${response.data.healthy} healthy, ${response.data.not_found} removed (404), ${response.data.archived} archived`
-      )
+      if (!jobId) {
+        console.error('[HEALTH-CHECK-FRONTEND] job_id is missing or undefined!')
+        console.error('[HEALTH-CHECK-FRONTEND] jobResponse.data:', jobResponse.data)
+        throw new Error(`Failed to start health check job - received job_id: ${jobId}`)
+      }
+      
+      console.log(`[HEALTH-CHECK-FRONTEND] Health check job started with ID: ${jobId}`)
+      console.log(`[HEALTH-CHECK-FRONTEND] Starting progress polling (every 300ms)...`)
+      
+      // Poll for progress every 300ms
+      let pollCount = 0
+      const progressInterval = setInterval(async () => {
+        pollCount++
+        try {
+          const progressResponse = await generalApi.getHealthCheckProgress(jobId)
+          const progress = progressResponse.data
+          
+          if (pollCount % 10 === 0) { // Log every 10 polls (3 seconds) to avoid spam
+            console.log(`[HEALTH-CHECK-POLL] Poll #${pollCount}: ${progress.current}/${progress.total} - Status: ${progress.status} - Message: "${progress.message}"`)
+          }
+          
+          // Update state
+          setAutoCheckProgress({
+            isRunning: progress.status === 'running',
+            current: progress.current,
+            total: progress.total,
+            status: progress.message
+          })
+          
+          // Stop polling when complete
+          if (progress.status === 'completed' || progress.status === 'failed') {
+            clearInterval(progressInterval)
+            console.log(`[HEALTH-CHECK-FRONTEND] Health check ${progress.status} after ${pollCount} polls`)
+            console.log(`[HEALTH-CHECK-FRONTEND] Final progress:`, progress)
+            
+            if (progress.status === 'completed') {
+              console.log(`[HEALTH-CHECK-FRONTEND] Summary: ${progress.message}`)
+              // Refresh data and show summary
+              await new Promise(resolve => setTimeout(resolve, 500))
+              fetchRepositories()
+              
+              toast.success(progress.message)
+            } else {
+              console.error(`[HEALTH-CHECK-FRONTEND] Health check failed: ${progress.error || 'Unknown error'}`)
+              toast.error(`Health check failed: ${progress.error || 'Unknown error'}`)
+            }
+            
+            setAutoCheckProgress({isRunning: false, current: 0, total: 0, status: ''})
+          }
+        } catch (pollError) {
+          console.error(`[HEALTH-CHECK-POLL-ERROR] Poll attempt #${pollCount} failed:`, pollError)
+          // Continue polling on error, don't break
+        }
+      }, 300)
+      
+      // Timeout safety: stop polling after 30 minutes
+      setTimeout(() => {
+        clearInterval(progressInterval)
+        console.warn('[HEALTH-CHECK-FRONTEND] Health check polling timed out after 30 minutes')
+        setAutoCheckProgress({isRunning: false, current: 0, total: 0, status: ''})
+      }, 30 * 60 * 1000)
+    } catch (error: any) {
+      console.error('[HEALTH-CHECK-FRONTEND] ===== Error during auto health check =====')
+      console.error('[HEALTH-CHECK-FRONTEND] Error object:', error)
+      console.error('[HEALTH-CHECK-FRONTEND] Error message:', error?.message)
+      console.error('[HEALTH-CHECK-FRONTEND] Error response:', error?.response)
+      console.error('[HEALTH-CHECK-FRONTEND] Full error:', JSON.stringify(error, null, 2))
       
       setAutoCheckProgress({isRunning: false, current: 0, total: 0, status: ''})
-    } catch (error) {
-      console.error('Error during auto health check:', error)
-      setAutoCheckProgress({isRunning: false, current: 0, total: 0, status: ''})
-      toast.error('Auto health check failed')
+      toast.error(`Auto health check failed: ${error?.message || 'Unknown error'}`)
     }
   }
 
@@ -545,6 +654,18 @@ export function RepositoryList() {
           </span>
         </div>
       </div>
+
+      {/* Debug: Show state if any health check is running */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs">
+          <div className="font-mono text-gray-700">
+            <div>autoCheckProgress.isRunning: <strong>{String(autoCheckProgress.isRunning)}</strong></div>
+            <div>autoCheckProgress.current: <strong>{autoCheckProgress.current}</strong></div>
+            <div>autoCheckProgress.total: <strong>{autoCheckProgress.total}</strong></div>
+            <div>autoCheckProgress.status: <strong>{autoCheckProgress.status || '(empty)'}</strong></div>
+          </div>
+        </div>
+      )}
 
       {/* Keyboard Shortcuts Help */}
       {showShortcuts && (
@@ -774,12 +895,12 @@ export function RepositoryList() {
       ) : (
         <>
           {/* Auto-check progress indicator */}
-          {autoCheckProgress.isRunning && (
+          {autoCheckProgress.isRunning ? (
             <div className="mb-4 bg-[var(--color-info-50)] border border-[var(--color-info-200)] rounded-[var(--radius-lg)] p-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <p className="text-[length:var(--text-sm)] font-semibold text-[var(--color-info-700)] mb-2">
-                    {autoCheckProgress.status}
+                    {autoCheckProgress.status || 'Health check in progress...'}
                   </p>
                   <div className="w-full bg-[var(--color-info-200)] rounded-full h-2 overflow-hidden">
                     <div
@@ -791,14 +912,14 @@ export function RepositoryList() {
                   </div>
                   {autoCheckProgress.total > 0 && (
                     <p className="text-[length:var(--text-xs)] text-[var(--color-info-700)] mt-2">
-                      {autoCheckProgress.current} of {autoCheckProgress.total} completed
+                      {autoCheckProgress.current} of {autoCheckProgress.total} repositories checked
                     </p>
                   )}
                 </div>
                 <Loader2 className="size-5 text-[var(--color-info-600)] flex-shrink-0 animate-spin" />
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Table */}
           <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-[var(--shadow-sm)] border border-[var(--color-border-secondary)] overflow-x-auto">

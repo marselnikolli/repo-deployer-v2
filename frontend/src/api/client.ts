@@ -123,6 +123,9 @@ export const generalApi = {
   
   importJobs: () =>
     api.get('/imports/jobs'),
+
+  getHealthCheckProgress: (jobId: string) =>
+    api.get(`/bulk/health-check/${jobId}/progress`),
 }
 
 // Export endpoints

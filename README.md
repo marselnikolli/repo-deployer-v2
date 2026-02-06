@@ -13,7 +13,9 @@ A powerful, self-hosted platform for managing, cloning, and deploying GitHub rep
 
 ### GitHub Integration
 - **Metadata Sync** - Fetch stars, forks, watchers, language, topics, and license info
-- **Health Monitoring** - Check if repositories still exist on GitHub
+- **Health Monitoring** - Bulk check if repositories still exist on GitHub with progress tracking
+- **Rate Limiting** - Smart API rate limiting with configurable chunking and delays (supports 4000+ repos)
+- **GitHub Authentication** - Optional token support for 83x higher rate limits (5000 req/hr vs 60/hr)
 - **Duplicate Detection** - Prevents importing the same repository twice
 
 ### Clone & Deploy
@@ -123,6 +125,8 @@ docker-compose up --build
 |--------|----------|-------------|
 | POST | `/api/bulk/update-category` | Update category for multiple repos |
 | POST | `/api/bulk/delete` | Delete multiple repositories |
+| POST | `/api/bulk/health-check` | Check health of all repositories with progress tracking |
+| GET | `/api/bulk/health-check/{job_id}/progress` | Get real-time health check progress |
 
 ## Keyboard Shortcuts
 
@@ -156,7 +160,8 @@ repo-deployer-v2/
 │   │   ├── git_service.py      # Git clone/sync operations
 │   │   ├── github_service.py   # GitHub API integration
 │   │   ├── clone_queue.py      # Batch clone queue
-│   │   └── export_service.py   # CSV/JSON/Markdown export
+│   │   ├── export_service.py   # CSV/JSON/Markdown export
+│   │   └── search_service.py   # Full-text search & analytics
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
@@ -168,10 +173,16 @@ repo-deployer-v2/
 │   │   └── pages/              # Page components
 │   ├── package.json
 │   └── Dockerfile
+├── docs/                       # Documentation
+│   ├── FEATURES.md
+│   ├── FEATURES_ROADMAP.md
+│   ├── FUTURE_FEATURES.md
+│   ├── GITHUB_API_RATE_LIMITING.md
+│   ├── HEALTH_CHECK_IMPLEMENTATION.md
+│   ├── RATE_LIMITING_QUICK_START.md
+│   └── ...
 ├── docker-compose.yml
-├── README.md
-├── FEATURES_ROADMAP.md         # Implementation status
-└── FUTURE_FEATURES.md          # Planned features
+└── README.md
 ```
 
 ## Development
@@ -196,20 +207,45 @@ npm run dev
 
 ### Environment Variables
 
-Create `backend/.env`:
+Create `.env` in the project root:
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/repo_deployer
-REDIS_URL=redis://localhost:6379
-GITHUB_TOKEN=your_github_token_optional
-MIRROR_DIR=/path/to/cloned/repos
+# GitHub API Authentication (Optional but recommended)
+# Without token: 60 requests/hour limit
+# With token: 5,000 requests/hour limit
+# Get token: https://github.com/settings/tokens (needs public_repo scope)
+GITHUB_TOKEN=github_pat_your_token_here
 ```
+
+The application automatically loads from `.env` via Docker Compose `env_file` directive.
+
+## GitHub API Rate Limiting
+
+This application handles large repository collections efficiently:
+
+- **Without GitHub Token:** 60 requests/hour (can scan ~100 repos before hitting limit)
+- **With GitHub Token:** 5,000 requests/hour (can scan 4,000+ repos with proper rate limiting)
+
+**Smart Rate Limiting Features:**
+- Configurable request delays (default: 150ms per request)
+- Batch processing in chunks (default: 50 repos per batch with 2s pause between chunks)
+- Automatic retry on rate limit (HTTP 429) with Retry-After header parsing
+- Real-time progress tracking with Redis backend
+- Comprehensive logging with [HEALTH-CHECK-*] prefixed messages
+
+**Setup GitHub Token:**
+1. Visit https://github.com/settings/tokens/new
+2. Select scope: `public_repo`
+3. Copy the token
+4. Add to `.env`: `GITHUB_TOKEN=github_pat_...`
+
+See [docs/GITHUB_API_RATE_LIMITING.md](docs/GITHUB_API_RATE_LIMITING.md) for detailed configuration.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Zustand |
-| Backend | Python 3.11, FastAPI, SQLAlchemy, Pydantic |
+| Frontend | React 18+, TypeScript, Vite 6, Tailwind CSS, Zustand |
+| Backend | Python 3.11, FastAPI 0.104, SQLAlchemy, Pydantic |
 | Database | PostgreSQL 16 |
 | Cache | Redis 7 |
 | Container | Docker, Docker Compose |
@@ -222,11 +258,24 @@ MIRROR_DIR=/path/to/cloned/repos
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+## Documentation
+
+Detailed documentation is available in the `docs/` folder:
+
+- [FEATURES.md](docs/FEATURES.md) - Current implemented features
+- [FEATURES_ROADMAP.md](docs/FEATURES_ROADMAP.md) - Feature implementation status
+- [FUTURE_FEATURES.md](docs/FUTURE_FEATURES.md) - Planned features
+- [GITHUB_API_RATE_LIMITING.md](docs/GITHUB_API_RATE_LIMITING.md) - Rate limiting architecture
+- [RATE_LIMITING_QUICK_START.md](docs/RATE_LIMITING_QUICK_START.md) - Quick setup guide
+- [HEALTH_CHECK_IMPLEMENTATION.md](docs/HEALTH_CHECK_IMPLEMENTATION.md) - Health check details
+- [OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md) - Performance optimization plan
+
 ## License
 
 MIT License - see LICENSE file for details.
 
 ---
 
-**Version:** 2.1.0
-**Last Updated:** February 2026
+**Version:** 2.2.0  
+**Last Updated:** February 6, 2026  
+**Features:** Repository management, bulk health checks, GitHub API rate limiting, Docker deployment
