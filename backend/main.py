@@ -522,8 +522,10 @@ async def bulk_health_check(
     action: BulkActionRequest,
     db: Session = Depends(get_db)
 ):
-    """Check health status of multiple repositories"""
+    """Check health status of multiple repositories by calling GitHub API"""
     try:
+        import requests
+        import re
         from datetime import datetime
         
         repos = db.query(Repository).filter(Repository.id.in_(action.repository_ids)).all()
@@ -533,16 +535,77 @@ async def bulk_health_check(
         not_found_count = 0
         
         for repo in repos:
-            # Determine health status
-            if repo.archived:
-                repo.health_status = "archived"
-                archived_count += 1
-            elif not repo.github_created_at:
-                repo.health_status = "not_found"
-                not_found_count += 1
-            else:
-                repo.health_status = "healthy"
-                healthy_count += 1
+            try:
+                # Parse GitHub URL to extract owner and repo name
+                url = repo.url.rstrip('/')
+                if url.endswith('.git'):
+                    url = url[:-4]
+                
+                # Extract from https URL or git@github.com URL
+                https_match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
+                ssh_match = re.search(r'git@github\.com:([^/]+)/([^/]+)', url)
+                
+                if https_match:
+                    owner, repo_name = https_match.group(1), https_match.group(2)
+                elif ssh_match:
+                    owner, repo_name = ssh_match.group(1), ssh_match.group(2)
+                else:
+                    # Not a GitHub URL, mark as unknown
+                    repo.health_status = "unknown"
+                    repo.last_health_check = datetime.utcnow()
+                    continue
+                
+                # Call GitHub API to check repository status
+                api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+                response = requests.get(api_url, timeout=10)
+                
+                if response.status_code == 200:
+                    # Repository exists
+                    data = response.json()
+                    
+                    # Update repository metadata
+                    repo.archived = data.get('archived', False)
+                    repo.stars = data.get('stargazers_count', 0)
+                    repo.forks = data.get('forks_count', 0)
+                    repo.watchers = data.get('watchers_count', 0)
+                    repo.language = data.get('language')
+                    repo.topics = data.get('topics', [])
+                    repo.license = data.get('license', {}).get('name') if data.get('license') else None
+                    repo.is_fork = data.get('fork', False)
+                    repo.open_issues = data.get('open_issues_count', 0)
+                    repo.default_branch = data.get('default_branch', 'main')
+                    
+                    if data.get('created_at'):
+                        from datetime import datetime as dt
+                        repo.github_created_at = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
+                    if data.get('updated_at'):
+                        from datetime import datetime as dt
+                        repo.github_updated_at = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
+                    if data.get('pushed_at'):
+                        from datetime import datetime as dt
+                        repo.github_pushed_at = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
+                    
+                    repo.last_metadata_sync = datetime.utcnow()
+                    
+                    # Set health status
+                    if data.get('archived'):
+                        repo.health_status = "archived"
+                        archived_count += 1
+                    else:
+                        repo.health_status = "healthy"
+                        healthy_count += 1
+                
+                elif response.status_code == 404:
+                    # Repository not found
+                    repo.health_status = "not_found"
+                    not_found_count += 1
+                else:
+                    # Other API error, keep existing status
+                    repo.health_status = "unknown"
+                
+            except Exception as e:
+                logger.error(f"Error checking repository {repo.name}: {e}")
+                repo.health_status = "unknown"
             
             repo.last_health_check = datetime.utcnow()
         
@@ -556,6 +619,7 @@ async def bulk_health_check(
             "total": len(repos)
         }
     except Exception as e:
+        logger.error(f"Bulk health check error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
