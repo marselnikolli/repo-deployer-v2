@@ -149,12 +149,19 @@ class SchedulerService:
         try:
             import requests
             import re
+            import os
             
             repos = db.query(Repository).all()
             healthy_count = 0
             archived_count = 0
             not_found_count = 0
             repo_updates = []  # Batch updates for bulk insertion
+            
+            # Get GitHub token for authenticated requests (5,000 req/hour instead of 60)
+            github_token = os.getenv('GITHUB_TOKEN', '')
+            headers = {}
+            if github_token:
+                headers['Authorization'] = f'token {github_token}'
             
             for repo in repos:
                 repo_update = {"id": repo.id}
@@ -182,7 +189,7 @@ class SchedulerService:
                     
                     # Call GitHub API to check repository status
                     api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
-                    response = requests.get(api_url, timeout=10)
+                    response = requests.get(api_url, headers=headers, timeout=10)
                     
                     if response.status_code == 200:
                         # Repository exists
