@@ -327,8 +327,6 @@ export function RepositoryList() {
       }
     })
   }
-    }
-  }
 
   const handleBulkUpdateCategory = async () => {
     if (selectedIds.size === 0 || !selectedCategory) return
