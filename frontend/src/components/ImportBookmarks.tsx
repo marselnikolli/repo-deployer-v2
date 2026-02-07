@@ -80,24 +80,46 @@ export function ImportBookmarks() {
     }))
 
     try {
+      // Show animated progress bar while import is running
+      let animateProgress = () => {
+        setState((prev) => {
+          // Increment by 2-8 smoothly to simulate progress
+          const increase = Math.random() * 6 + 2
+          const newCount = Math.min(prev.importedCount + increase, state.newlyImported - 5)
+          return {
+            ...prev,
+            importedCount: newCount,
+          }
+        })
+      }
+
+      // Start simulated progress animation
+      let animationFrameId: number
+      const animateProgressLoop = () => {
+        animateProgress()
+        animationFrameId = requestAnimationFrame(animateProgressLoop)
+      }
+      animateProgressLoop()
+
       // Call the import API
       const response = await importApi.htmlFile(state.file)
-      
-      // Animate progress smoothly to 100% using requestAnimationFrame after import completes
-      let currentCount = 0
-      const totalToAnimate = state.newlyImported
-      
-      const animateProgress = () => {
-        currentCount = Math.min(currentCount + 5, totalToAnimate)
+
+      // Stop the simulation animation
+      cancelAnimationFrame(animationFrameId)
+
+      // Complete to 100% smoothly
+      let finalCount = state.newlyImported - 5
+      const finalAnimateProgress = () => {
+        finalCount = Math.min(finalCount + 10, state.newlyImported)
         setState((prev) => ({
           ...prev,
-          importedCount: currentCount,
+          importedCount: finalCount,
         }))
-        
-        if (currentCount < totalToAnimate) {
-          requestAnimationFrame(animateProgress)
+
+        if (finalCount < state.newlyImported) {
+          requestAnimationFrame(finalAnimateProgress)
         } else {
-          // Ensure we're at 100%
+          // Ensure we're at 100% and complete
           setState((prev) => ({
             ...prev,
             step: 'complete',
@@ -105,9 +127,8 @@ export function ImportBookmarks() {
           }))
         }
       }
-      
-      // Start the smooth animation
-      requestAnimationFrame(animateProgress)
+
+      requestAnimationFrame(finalAnimateProgress)
 
       toast.success(`Successfully imported ${response.data.newly_imported || state.newlyImported} repositories`)
     } catch (error: unknown) {
