@@ -76,6 +76,7 @@ async def lifespan(app: FastAPI):
         run_migration(db, 4, "add_teams_tables")
         run_migration(db, 5, "add_import_sources_table")
         run_migration(db, 6, "add_deployments_table")
+        run_migration(db, 7, "add_email_fields")
     finally:
         db.close()
     
