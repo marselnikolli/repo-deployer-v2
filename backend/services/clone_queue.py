@@ -189,13 +189,13 @@ class CloneQueueService:
         from services.git_service import clone_repo
 
         try:
-            # Ensure target directory exists
-            target_dir = os.path.dirname(job.target_path)
-            os.makedirs(target_dir, exist_ok=True)
+            # Get the repos directory (don't create intermediate directories)
+            repos_dir = os.path.dirname(job.target_path)
+            os.makedirs(repos_dir, exist_ok=True)
 
             # Clone the repository with timeout
             logger.info(f"Cloning to {job.target_path}")
-            success = clone_repo(job.repository_url, job.target_path)
+            success = clone_repo(job.repository_url, repos_dir)
 
             if success:
                 job.status = CloneStatus.COMPLETED

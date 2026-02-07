@@ -173,11 +173,11 @@ def clone_repo(url: str, path: str, timeout_seconds: int = 300) -> bool:
     """
     Clone repository as ZIP file in a dedicated folder
     
-    Creates structure: /repos/owner-repo/owner-repo.zip and install-guide.md
+    Creates structure: /repos/repo-name/repo-name.zip and install-guide.md
     
     Args:
         url: GitHub repository URL
-        path: Target path (used to extract repo name, actual files go to dedicated folder)
+        path: Target path (repos directory where folder will be created)
         timeout_seconds: Download timeout in seconds
         
     Returns:
@@ -190,14 +190,11 @@ def clone_repo(url: str, path: str, timeout_seconds: int = 300) -> bool:
             return False
         
         owner, repo = parse_github_url(url)
-        repo_folder_name = f"{owner}-{repo}"
+        # Use repository name only (not owner-repo) to avoid duplicate folder nesting
+        repo_folder_name = repo
         
-        # Determine repos root directory from path
-        repos_root = Path(path).parent
-        while repos_root.parent != repos_root and repos_root.name != "repos":
-            repos_root = repos_root.parent
-        if repos_root.name != "repos":
-            repos_root = Path(path).parent
+        # Use provided path as repos root directory
+        repos_root = Path(path)
         
         # Create folder for this repository
         repo_folder = repos_root / repo_folder_name
