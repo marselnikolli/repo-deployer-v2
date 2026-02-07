@@ -202,16 +202,6 @@ export function RepositoryList() {
     fetchRepositories()
   }, [debouncedQuery])
 
-  // Log health check progress changes for debugging
-  useEffect(() => {
-    console.log('[DEBUG-AUTOCHECK] autoCheckProgress state changed:', {
-      isRunning: autoCheckProgress.isRunning,
-      current: autoCheckProgress.current,
-      total: autoCheckProgress.total,
-      status: autoCheckProgress.status
-    })
-  }, [autoCheckProgress])
-
   const fetchRepositories = async () => {
     try {
       setLoading(true)
