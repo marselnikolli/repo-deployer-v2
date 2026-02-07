@@ -135,6 +135,15 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 text-gray-900"
               />
             </div>
+            <div className="text-right mt-2">
+              <button
+                type="button"
+                onClick={() => navigate('/forgot-password')}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Forgot Password?
+              </button>
+            </div>
           </div>
 
           {/* Error Message */}

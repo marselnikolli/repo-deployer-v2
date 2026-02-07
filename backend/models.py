@@ -139,6 +139,17 @@ class User(Base):
     avatar_url = Column(String(512), nullable=True)
     profile = Column(JSON, nullable=True)  # Additional profile info
     api_keys = Column(JSON, nullable=True)  # List of API keys
+    
+    # Email verification
+    email_verified_at = Column(DateTime, nullable=True)
+    email_verification_token = Column(String(255), nullable=True, unique=True)
+    email_verification_expires_at = Column(DateTime, nullable=True)
+    
+    # Password reset
+    password_reset_token = Column(String(255), nullable=True, unique=True)
+    password_reset_expires_at = Column(DateTime, nullable=True)
+    
+    # Activity tracking
     last_login = Column(DateTime, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

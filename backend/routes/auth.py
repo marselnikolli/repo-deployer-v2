@@ -2,9 +2,11 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from datetime import timedelta, datetime
 from schemas import (
-    UserRegister, UserLogin, UserSchema, TokenResponse, APIKeyCreate, APIKeyResponse
+    UserRegister, UserLogin, UserSchema, TokenResponse, APIKeyCreate, APIKeyResponse,
+    PasswordResetRequest, PasswordResetConfirm, PasswordResetResponse,
+    EmailVerification, EmailVerificationResponse
 )
 from database import SessionLocal
 from crud.user import (
@@ -15,11 +17,15 @@ from services.auth import (
     hash_password, verify_password, create_access_token, decode_access_token
 )
 from services.oauth import OAuth2Service
+from services.email_service import EmailService, generate_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # OAuth2 service instance
 oauth2_service = OAuth2Service()
+
+# Email service instance
+email_service = EmailService()
 
 
 def get_db():
@@ -71,6 +77,27 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         email=user_data.email,
         password=user_data.password,
         name=user_data.name,
+        auth_provider="local"
+    )
+    
+    # Generate email verification token
+    verification_token = generate_token()
+    verification_expires = datetime.utcnow() + timedelta(hours=48)
+    user.email_verification_token = verification_token
+    user.email_verification_expires_at = verification_expires
+    db.commit()
+    
+    # Send verification email
+    email_service.send_email_verification(
+        to_email=user.email,
+        user_name=user.name or user.email,
+        verification_token=verification_token
+    )
+    
+    # Send welcome email
+    email_service.send_welcome_email(
+        to_email=user.email,
+        user_name=user.name or user.email,
         auth_provider="local"
     )
     
@@ -228,6 +255,154 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
         access_token=jwt_token,
         user=UserSchema.from_orm(new_user)
     )
+
+
+# ============ PASSWORD RESET & EMAIL VERIFICATION ============
+
+@router.post("/password-reset-request", response_model=PasswordResetResponse)
+def request_password_reset(
+    request: PasswordResetRequest,
+    db: Session = Depends(get_db)
+):
+    """Request a password reset email"""
+    user = get_user_by_email(db, request.email)
+    
+    if not user:
+        # Don't reveal if email exists for security
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Generate reset token
+    reset_token = generate_token()
+    reset_expires = datetime.utcnow() + timedelta(hours=24)
+    
+    # Save token to database
+    user.password_reset_token = reset_token
+    user.password_reset_expires_at = reset_expires
+    db.commit()
+    
+    # Send reset email
+    email_service.send_password_reset_email(
+        to_email=user.email,
+        user_name=user.name or user.email,
+        reset_token=reset_token
+    )
+    
+    return {"message": "Password reset email sent. Please check your inbox."}
+
+
+@router.post("/password-reset-confirm", response_model=TokenResponse)
+def confirm_password_reset(
+    request: PasswordResetConfirm,
+    db: Session = Depends(get_db)
+):
+    """Confirm password reset with token"""
+    from models import User
+    user = db.query(User).filter(User.password_reset_token == request.token).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+    
+    # Check if token has expired
+    if user.password_reset_expires_at and user.password_reset_expires_at < datetime.utcnow():
+        user.password_reset_token = None
+        user.password_reset_expires_at = None
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password reset token has expired"
+        )
+    
+    # Update password
+    user.password_hash = hash_password(request.new_password)
+    user.password_reset_token = None
+    user.password_reset_expires_at = None
+    db.commit()
+    
+    # Create new access token
+    access_token = create_access_token(user.id)
+    return TokenResponse(
+        access_token=access_token,
+        user=UserSchema.from_orm(user)
+    )
+
+
+@router.post("/email-verify", response_model=EmailVerificationResponse)
+def verify_email(
+    request: EmailVerification,
+    db: Session = Depends(get_db)
+):
+    """Verify email address with token"""
+    from models import User
+    user = db.query(User).filter(User.email_verification_token == request.token).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification token"
+        )
+    
+    # Check if token has expired
+    if user.email_verification_expires_at and user.email_verification_expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email verification token has expired"
+        )
+    
+    # Mark email as verified
+    user.is_verified = True
+    user.email_verified_at = datetime.utcnow()
+    user.email_verification_token = None
+    user.email_verification_expires_at = None
+    db.commit()
+    
+    return EmailVerificationResponse(
+        message="Email verified successfully!",
+        user=UserSchema.from_orm(user)
+    )
+
+
+@router.post("/resend-verification", response_model=PasswordResetResponse)
+def resend_verification_email(
+    request: PasswordResetRequest,
+    db: Session = Depends(get_db)
+):
+    """Resend email verification"""
+    user = get_user_by_email(db, request.email)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    if user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is already verified"
+        )
+    
+    # Generate new verification token
+    verification_token = generate_token()
+    verification_expires = datetime.utcnow() + timedelta(hours=48)
+    
+    user.email_verification_token = verification_token
+    user.email_verification_expires_at = verification_expires
+    db.commit()
+    
+    # Send verification email
+    email_service.send_email_verification(
+        to_email=user.email,
+        user_name=user.name or user.email,
+        verification_token=verification_token
+    )
+    
+    return {"message": "Verification email sent. Please check your inbox."}
 
 
 @router.get("/me", response_model=UserSchema)

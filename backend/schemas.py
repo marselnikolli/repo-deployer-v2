@@ -59,6 +59,30 @@ class APIKeyCreate(BaseModel):
     name: Optional[str] = None
 
 
+# ============ PASSWORD RESET / EMAIL VERIFICATION ============
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+
+class EmailVerification(BaseModel):
+    token: str
+
+
+class PasswordResetResponse(BaseModel):
+    message: str
+
+
+class EmailVerificationResponse(BaseModel):
+    message: str
+    user: Optional[UserSchema] = None
+
+
 # ============ TAG SCHEMAS ============
 
 class TagBase(BaseModel):

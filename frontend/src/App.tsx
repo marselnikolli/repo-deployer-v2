@@ -5,6 +5,9 @@ import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import GitHubLoginPage from '@/pages/GitHubLoginPage'
 import GoogleLoginPage from '@/pages/GoogleLoginPage'
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
+import PasswordResetPage from '@/pages/PasswordResetPage'
+import EmailVerificationPage from '@/pages/EmailVerificationPage'
 import DockerSetupPage from '@/pages/DockerSetupPage'
 import { DeploymentPage } from '@/pages/DeploymentPage'
 import { SchedulerPage } from '@/pages/SchedulerPage'
@@ -31,6 +34,9 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<PasswordResetPage />} />
+        <Route path="/verify-email" element={<EmailVerificationPage />} />
         <Route path="/auth/github/callback" element={<GitHubLoginPage />} />
         <Route path="/auth/google/callback" element={<GoogleLoginPage />} />
         <Route path="/docker/setup" element={<DockerSetupPage />} />
