@@ -177,7 +177,8 @@ export function RepositoryList() {
         const previousJobs = previousImportJobsRef.current
         const wasImporting = previousJobs.some(j => j.status === 'running' || j.status === 'pending')
         const nowRunning = jobs.some(j => j.status === 'running' || j.status === 'pending')
-        const justCompleted = wasImporting && !nowRunning && jobs.length > 0
+        // Trigger when we had importing jobs and now none are running (even if job list is empty after completion)
+        const justCompleted = wasImporting && !nowRunning
         console.log('[IMPORT-POLLING] Completion detection - wasImporting:', wasImporting, 'nowRunning:', nowRunning, 'justCompleted:', justCompleted, 'previousJobs:', previousJobs)
         
         // Update the ref with current jobs
