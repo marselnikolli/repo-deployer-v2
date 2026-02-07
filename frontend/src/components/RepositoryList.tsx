@@ -24,6 +24,7 @@ import { repositoryApi, bulkApi, generalApi, searchApi, exportApi, cloneQueueApi
 import { cx } from '@/utils/cx'
 import toast from 'react-hot-toast'
 import { RepositoryDetails } from './RepositoryDetails'
+import { DeleteConfirmationModal } from './DeleteConfirmationModal'
 import { useKeyboardShortcuts, KEYBOARD_SHORTCUTS } from '@/hooks/useKeyboardShortcuts'
 
 // Utility to clean URLs by removing tracking parameters
@@ -96,6 +97,16 @@ export function RepositoryList() {
   const [isHealthChecking, setIsHealthChecking] = useState(false)
   const [importJobs, setImportJobs] = useState<any[]>([])
   const [autoCheckProgress, setAutoCheckProgress] = useState<{isRunning: boolean; current: number; total: number; status: string}>({isRunning: false, current: 0, total: 0, status: ''})
+  
+  // Delete confirmation modal state
+  const [deleteModal, setDeleteModal] = useState<{isOpen: boolean; title: string; message: string; itemCount: number; onConfirm: () => void}>({
+    isOpen: false,
+    title: '',
+    message: '',
+    itemCount: 0,
+    onConfirm: () => {}
+  })
+  
   const searchInputRef = useRef<HTMLInputElement>(null)
   const clonePollingRef = useRef<NodeJS.Timeout | null>(null)
   const importPollingRef = useRef<NodeJS.Timeout | null>(null)
@@ -298,15 +309,24 @@ export function RepositoryList() {
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return
 
-    if (!confirm(`Delete ${selectedIds.size} repositories?`)) return
-
-    try {
-      await bulkApi.delete(Array.from(selectedIds))
-      toast.success(`Deleted ${selectedIds.size} repositories`)
-      clearSelection()
-      fetchRepositories()
-    } catch {
-      toast.error('Failed to delete repositories')
+    setDeleteModal({
+      isOpen: true,
+      title: 'Delete Repositories',
+      message: `Are you sure you want to delete ${selectedIds.size} selected repositories? This action cannot be undone.`,
+      itemCount: selectedIds.size,
+      onConfirm: async () => {
+        try {
+          await bulkApi.delete(Array.from(selectedIds))
+          toast.success(`Deleted ${selectedIds.size} repositories`)
+          clearSelection()
+          fetchRepositories()
+          setDeleteModal(prev => ({...prev, isOpen: false}))
+        } catch {
+          toast.error('Failed to delete repositories')
+        }
+      }
+    })
+  }
     }
   }
 
@@ -498,47 +518,53 @@ export function RepositoryList() {
   const handleDeleteAll = async () => {
     if (totalCount === 0) return
 
-    if (!confirm(`Are you sure you want to delete ALL ${totalCount} repositories? This cannot be undone.`)) return
-    if (!confirm('This will permanently delete all repositories. Please confirm again.')) return
-
-    try {
-      setLoading(true)
-      // Fetch all matching IDs according to current filters/search
-      let allIds: number[] = []
-      if (debouncedQuery || filterCloned !== null || filterDeployed !== null) {
-        // use search API to get all (up to 10000)
-        const resp = await searchApi.search(
-          debouncedQuery || undefined,
-          filterCategory || undefined,
-          filterCloned ?? undefined,
-          filterDeployed ?? undefined,
-          10000,
-          0
-        )
-        const data = resp.data
-        allIds = (data.results || []).map((r: any) => r.id)
-      } else {
-        const resp = await repositoryApi.list(filterCategory || undefined, 0, 10000)
-        allIds = (resp.data || []).map((r: any) => r.id)
+    setDeleteModal({
+      isOpen: true,
+      title: 'Delete All Repositories',
+      message: `This will permanently delete ALL ${totalCount} repositories from the system. This action cannot be undone and all local clones will be removed.`,
+      itemCount: totalCount,
+      onConfirm: async () => {
+        try {
+          setLoading(true)
+          // Fetch all matching IDs according to current filters/search
+          let allIds: number[] = []
+          if (debouncedQuery || filterCloned !== null || filterDeployed !== null) {
+            // use search API to get all (up to 10000)
+            const resp = await searchApi.search(
+              debouncedQuery || undefined,
+              filterCategory || undefined,
+              filterCloned ?? undefined,
+              filterDeployed ?? undefined,
+              10000,
+              0
+            )
+            const data = resp.data
+            allIds = (data.results || []).map((r: any) => r.id)
+          } else {
+            const resp = await repositoryApi.list(filterCategory || undefined, 0, 10000)
+            allIds = (resp.data || []).map((r: any) => r.id)
+          }
+          if (allIds.length === 0) {
+            toast('No repositories to delete')
+            setLoading(false)
+            return
+          }
+          await bulkApi.delete(allIds)
+          toast.success(`Deleted all ${totalCount} repositories`)
+          clearSelection()
+          setFilterCategory(null)
+          setFilterCloned(null)
+          setFilterDeployed(null)
+          setSearchQuery('')
+          fetchRepositories()
+          setDeleteModal(prev => ({...prev, isOpen: false}))
+        } catch {
+          toast.error('Failed to delete all repositories')
+        } finally {
+          setLoading(false)
+        }
       }
-      if (allIds.length === 0) {
-        toast('No repositories to delete')
-        setLoading(false)
-        return
-      }
-      await bulkApi.delete(allIds)
-      toast.success(`Deleted all ${totalCount} repositories`)
-      clearSelection()
-      setFilterCategory(null)
-      setFilterCloned(null)
-      setFilterDeployed(null)
-      setSearchQuery('')
-      fetchRepositories()
-    } catch {
-      toast.error('Failed to delete all repositories')
-    } finally {
-      setLoading(false)
-    }
+    })
   }
 
   const totalPages = Math.ceil(totalCount / pageSize)
@@ -942,8 +968,8 @@ export function RepositoryList() {
                       {getSortIcon('name')}
                     </span>
                   </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[120px]">
-                    Status
+                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[180px]">
+                    State
                   </th>
                   <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none min-w-[100px]"
                     onClick={() => handleSort('category')}
@@ -953,14 +979,8 @@ export function RepositoryList() {
                       {getSortIcon('category')}
                     </span>
                   </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[80px]">
-                    Cloned
-                  </th>
                   <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[150px]">
                     Metadata
-                  </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[100px]">
-                    Health
                   </th>
                 </tr>
               </thead>
@@ -1023,39 +1043,45 @@ export function RepositoryList() {
                         </button>
                       </div>
                     </td>
-                    <td className="px-4 py-3 min-w-[120px]">
-                      <div className="flex items-center gap-2">
-                        {repo?.cloned && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
-                            <CheckCircle className="size-3" />
-                            Cloned
+                    <td className="px-4 py-3 min-w-[180px]">
+                      <div className="flex flex-col gap-1.5">
+                        {/* Cloning state */}
+                        <div className="flex items-center gap-2">
+                          {repo?.cloned && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
+                              <CheckCircle className="size-3" />
+                              Cloned
+                            </span>
+                          )}
+                          {!repo.cloned && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-gray-100 text-gray-600 rounded-[var(--radius-md)]">
+                              Not cloned
+                            </span>
+                          )}
+                        </div>
+                        {/* Health status badge */}
+                        {repo?.health_status && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit ${
+                            repo.health_status === 'healthy' ? 'bg-green-100 text-green-700' :
+                            repo.health_status === 'archived' ? 'bg-gray-100 text-gray-700' :
+                            repo.health_status === 'not_found' ? 'bg-red-100 text-red-700' :
+                            'bg-blue-100 text-blue-700'
+                          }`}>
+                            <Heart className="size-3" />
+                            {repo.health_status}
                           </span>
                         )}
+                        {/* Deployed status */}
                         {repo?.deployed && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded-[var(--radius-md)]">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded-[var(--radius-md)] w-fit">
                             <Server className="size-3" />
                             Deployed
-                          </span>
-                        )}
-                        {!repo.cloned && !repo.deployed && (
-                          <span className="text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)]">
-                            —
                           </span>
                         )}
                       </div>
                     </td>
                     <td className="px-4 py-3 min-w-[100px]">
                       <CategoryBadge category={repo?.category || 'uncategorized'} />
-                    </td>
-                    <td className="px-4 py-3 min-w-[80px]">
-                      {repo?.cloned ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
-                          <CheckCircle className="size-3" />
-                          Yes
-                        </span>
-                      ) : (
-                        <span className="text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)]">No</span>
-                      )}
                     </td>
                     <td className="px-4 py-3 min-w-[150px]">
                       <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
@@ -1080,22 +1106,6 @@ export function RepositoryList() {
                           <span className="text-[var(--color-fg-quaternary)]">—</span>
                         )}
                       </div>
-                    </td>
-                    <td className="px-4 py-3 min-w-[100px]">
-                      {repo?.health_status && (
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] ${
-                          repo.health_status === 'healthy' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                          repo.health_status === 'archived' ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' :
-                          repo.health_status === 'not_found' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
-                          'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                        }`}>
-                          <Heart className="size-3" />
-                          {repo.health_status}
-                        </span>
-                      )}
-                      {!repo?.health_status && (
-                        <span className="text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)]">—</span>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -1224,6 +1234,16 @@ export function RepositoryList() {
           onUpdate={fetchRepositories}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteModal.isOpen}
+        title={deleteModal.title}
+        message={deleteModal.message}
+        itemCount={deleteModal.itemCount}
+        onConfirm={deleteModal.onConfirm}
+        onCancel={() => setDeleteModal(prev => ({...prev, isOpen: false}))}
+      />
     </div>
   )
 }

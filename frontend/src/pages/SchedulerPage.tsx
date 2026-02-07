@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, Plus, Trash2, Play, CheckCircle, AlertCircle, XCircle, Loader } from 'lucide-react';
+import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 
 interface Task {
   id: number;
@@ -29,6 +30,13 @@ export function SchedulerPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [runningTaskId, setRunningTaskId] = useState<number | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{isOpen: boolean; title: string; message: string; itemCount: number; onConfirm: () => void}>({
+    isOpen: false,
+    title: '',
+    message: '',
+    itemCount: 0,
+    onConfirm: () => {}
+  });
 
   const [formData, setFormData] = useState({
     name: '',
@@ -148,22 +156,29 @@ export function SchedulerPage() {
   };
 
   const handleDeleteTask = async (taskId: number) => {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-
-    try {
-      const response = await fetch(`/api/scheduler/tasks/${taskId}`, {
-        method: 'DELETE'
-      });
-      if (response.ok) {
-        setSuccess('✓ Task deleted');
-        fetchTasks();
-        fetchStats();
-      } else {
-        setError('Failed to delete task');
+    setDeleteModal({
+      isOpen: true,
+      title: 'Delete Scheduler Task',
+      message: 'Are you sure you want to delete this scheduled task? This action cannot be undone.',
+      itemCount: 1,
+      onConfirm: async () => {
+        try {
+          const response = await fetch(`/api/scheduler/tasks/${taskId}`, {
+            method: 'DELETE'
+          });
+          if (response.ok) {
+            setSuccess('✓ Task deleted');
+            fetchTasks();
+            fetchStats();
+            setDeleteModal(prev => ({...prev, isOpen: false}))
+          } else {
+            setError('Failed to delete task');
+          }
+        } catch (err) {
+          setError('Error deleting task');
+        }
       }
-    } catch (err) {
-      setError('Error deleting task');
-    }
+    });
   };
 
   const getStatusIcon = (status: string | null) => {
@@ -478,6 +493,16 @@ export function SchedulerPage() {
             ))
           )}
         </div>
+
+        {/* Delete Confirmation Modal */}
+        <DeleteConfirmationModal
+          isOpen={deleteModal.isOpen}
+          title={deleteModal.title}
+          message={deleteModal.message}
+          itemCount={deleteModal.itemCount}
+          onConfirm={deleteModal.onConfirm}
+          onCancel={() => setDeleteModal(prev => ({...prev, isOpen: false}))}
+        />
       </div>
     </div>
   );

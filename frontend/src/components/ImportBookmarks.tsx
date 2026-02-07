@@ -49,22 +49,9 @@ export function ImportBookmarks() {
       message: 'Analyzing bookmarks...',
     })
 
-    // Simulate scanning progress
-    const scanInterval = setInterval(() => {
-      setState((prev) => {
-        // Gradually increase scanned count up to a reasonable limit
-        const nextCount = prev.scannedCount + Math.floor(Math.random() * 10) + 5
-        return {
-          ...prev,
-          scannedCount: Math.min(nextCount, 1000), // Cap at 1000 for simulation
-        }
-      })
-    }, 100)
-
-    // Parse the file to get count
+    // Parse the file to get count - no simulated progress to avoid render thrashing
     try {
       const response = await importApi.htmlFile(file)
-      clearInterval(scanInterval)
       
       setState((prev) => ({
         ...prev,
@@ -77,7 +64,6 @@ export function ImportBookmarks() {
         message: response.data.message,
       }))
     } catch (error: unknown) {
-      clearInterval(scanInterval)
       const err = error as { response?: { data?: { detail?: string } } }
       toast.error(err.response?.data?.detail || 'Failed to analyze file')
       resetState()
@@ -94,29 +80,34 @@ export function ImportBookmarks() {
     }))
 
     try {
-      // Simulate progress updates while importing
-      const startTime = Date.now()
-      const progressInterval = setInterval(() => {
-        const elapsed = Date.now() - startTime
-        // Gradually increase progress, but leave room for it to reach 100% on complete
-        const simulated = Math.min((elapsed / 3000) * 90, 90)
-        setState((prev) => ({
-          ...prev,
-          importedCount: Math.floor((simulated / 100) * state.newlyImported),
-        }))
-      }, 200)
-
       // Call the import API
       const response = await importApi.htmlFile(state.file)
       
-      clearInterval(progressInterval)
-
-      // Set to 100% complete
-      setState((prev) => ({
-        ...prev,
-        step: 'complete',
-        importedCount: prev.newlyImported,
-      }))
+      // Animate progress smoothly to 100% using requestAnimationFrame after import completes
+      let currentCount = 0
+      const totalToAnimate = state.newlyImported
+      
+      const animateProgress = () => {
+        currentCount = Math.min(currentCount + 5, totalToAnimate)
+        setState((prev) => ({
+          ...prev,
+          importedCount: currentCount,
+        }))
+        
+        if (currentCount < totalToAnimate) {
+          requestAnimationFrame(animateProgress)
+        } else {
+          // Ensure we're at 100%
+          setState((prev) => ({
+            ...prev,
+            step: 'complete',
+            importedCount: prev.newlyImported,
+          }))
+        }
+      }
+      
+      // Start the smooth animation
+      requestAnimationFrame(animateProgress)
 
       toast.success(`Successfully imported ${response.data.newly_imported || state.newlyImported} repositories`)
     } catch (error: unknown) {
@@ -244,10 +235,10 @@ export function ImportBookmarks() {
                 <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-brand-500)] border-t-transparent"></div>
               </div>
               <p className="text-[length:var(--text-lg)] font-semibold text-[var(--color-fg-primary)]">
-                Scanning bookmarks...
+                Analyzing bookmarks...
               </p>
               <p className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)] mt-2">
-                {state.scannedCount} URLs scanned
+                Please wait while we process your file
               </p>
             </div>
 
@@ -264,15 +255,8 @@ export function ImportBookmarks() {
               </div>
             </div>
 
-            <div className="relative h-2 bg-[var(--color-bg-tertiary)] rounded-full overflow-hidden">
-              <div
-                className="absolute top-0 left-0 h-full bg-[var(--color-brand-500)] rounded-full animate-pulse"
-                style={{ width: `${Math.min((state.scannedCount / 500) * 100, 95)}%` }}
-              />
-            </div>
-
-            <p className="text-center text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)]">
-              Processing file... This may take a moment
+            <p className="text-center text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)]">
+              This may take a moment for large files...
             </p>
           </div>
         )}

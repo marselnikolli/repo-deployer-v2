@@ -4,6 +4,7 @@ import { Plus as PlusIcon, Trash2 as DeleteIcon, Archive as ArchiveIcon, Eye as 
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { CollectionScanner } from '@/components/CollectionScanner';
+import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 
 const apiClient = axios.create({
   baseURL: '/api',
@@ -57,6 +58,13 @@ export default function CollectionsPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isTemplatesDialogOpen, setIsTemplatesDialogOpen] = useState(false);
+  const [deleteModal, setDeleteModal] = useState<{isOpen: boolean; title: string; message: string; itemCount: number; onConfirm: () => void}>({
+    isOpen: false,
+    title: '',
+    message: '',
+    itemCount: 0,
+    onConfirm: () => {}
+  });
   
   // Form state
   const [formData, setFormData] = useState({
@@ -152,17 +160,22 @@ export default function CollectionsPage() {
   };
 
   const handleDeleteCollection = async (collectionId: number) => {
-    if (!window.confirm('Are you sure you want to delete this collection?')) {
-      return;
-    }
-
-    try {
-      await apiClient.delete(`/collections/${collectionId}`);
-      toast.success('Collection deleted');
-      await loadCollections();
-    } catch (err: any) {
-      toast.error('Failed to delete collection');
-    }
+    setDeleteModal({
+      isOpen: true,
+      title: 'Delete Collection',
+      message: 'Are you sure you want to delete this collection? This action cannot be undone.',
+      itemCount: 1,
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/collections/${collectionId}`);
+          toast.success('Collection deleted');
+          await loadCollections();
+          setDeleteModal(prev => ({...prev, isOpen: false}))
+        } catch (err: any) {
+          toast.error('Failed to delete collection');
+        }
+      }
+    });
   };
 
   const handleRemoveRepository = async (collectionId: number, repoId: number) => {
@@ -561,6 +574,16 @@ export default function CollectionsPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteModal.isOpen}
+        title={deleteModal.title}
+        message={deleteModal.message}
+        itemCount={deleteModal.itemCount}
+        onConfirm={deleteModal.onConfirm}
+        onCancel={() => setDeleteModal(prev => ({...prev, isOpen: false}))}
+      />
     </div>
   );
 }

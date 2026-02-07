@@ -35,7 +35,8 @@ export default function GitHubLoginPage() {
         const data = await response.json();
         
         // Save token and user info
-        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('auth_token', data.access_token);
+        localStorage.setItem('auth_type', 'Bearer');
         localStorage.setItem('username', data.user.email);
         
         setSuccess(true);
