@@ -159,7 +159,7 @@ export function RepositoryList() {
     }
   }, [isCloning])
 
-  // Poll for import jobs and auto-trigger health checks when complete
+  // Poll for import jobs
   useEffect(() => {
     // Only start polling if we have authentication
     const token = localStorage.getItem('token')
@@ -173,35 +173,9 @@ export function RepositoryList() {
         const jobs = response.data || []
         console.log('[IMPORT-POLLING] Jobs poll cycle - jobs count:', jobs.length, 'jobs:', jobs)
         
-        // Track previous jobs to detect newly completed imports
-        const previousJobs = previousImportJobsRef.current
-        const wasImporting = previousJobs.some(j => j.status === 'running' || j.status === 'pending')
-        const nowRunning = jobs.some(j => j.status === 'running' || j.status === 'pending')
-        // Trigger when we had importing jobs and now none are running (even if job list is empty after completion)
-        const justCompleted = wasImporting && !nowRunning
-        console.log('[IMPORT-POLLING] Completion detection - wasImporting:', wasImporting, 'nowRunning:', nowRunning, 'justCompleted:', justCompleted, 'previousJobs:', previousJobs)
-        
         // Update the ref with current jobs
         previousImportJobsRef.current = jobs
         setImportJobs(jobs)
-        
-        // Auto-trigger health check when import completes
-        if (justCompleted && !autoCheckProgress.isRunning) {
-          console.log('[IMPORT-COMPLETE] ===== Import job completed! =====')
-          console.log('[IMPORT-COMPLETE] Current autoCheckProgress:', autoCheckProgress)
-          console.log('[IMPORT-COMPLETE] wasImporting:', wasImporting)
-          console.log('[IMPORT-COMPLETE] nowRunning:', nowRunning)
-          console.log('[IMPORT-COMPLETE] justCompleted:', justCompleted)
-          console.log('[IMPORT-COMPLETE] jobs count:', jobs.length)
-          console.log('[IMPORT-COMPLETE] Job details:', jobs)
-          console.log('[IMPORT-COMPLETE] Triggering auto health check...')
-          toast.success('Import completed! Starting automatic health and metadata check...')
-          triggerAutoHealthCheck()
-        } else {
-          if (justCompleted) {
-            console.log('[IMPORT-POLLING] Skipping auto health check: autoCheckProgress.isRunning is true')
-          }
-        }
       } catch (error: any) {
         // Only log non-401 errors (401 means user not logged in)
         if (error?.response?.status !== 401) {

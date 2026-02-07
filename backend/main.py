@@ -23,7 +23,7 @@ from services.git_service import clone_repo, sync_repo, get_repo_info
 from services.clone_queue import clone_queue, CloneStatus
 # from services.docker_service import deploy_to_docker
 from crud import repository as repo_crud
-from routes import auth, docker, deployment, analytics, scheduler, notifications, search, import_routes, collection_routes
+from routes import auth, docker, deployment, analytics, notifications, search, import_routes, collection_routes
 
 logger = logging.getLogger(__name__)
 
@@ -80,69 +80,15 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     
-    # Initialize default scheduled tasks if they don't exist
-    db = SessionLocal()
-    try:
-        from models import ScheduledTask
-        from datetime import datetime, timedelta
-        
-        # Check if default tasks exist
-        health_check_task = db.query(ScheduledTask).filter(
-            ScheduledTask.name == "Daily Health Check"
-        ).first()
-        
-        metadata_sync_task = db.query(ScheduledTask).filter(
-            ScheduledTask.name == "Daily Metadata Sync"
-        ).first()
-        
-        # Create health check task if not exists
-        if not health_check_task:
-            health_check_task = ScheduledTask(
-                name="Daily Health Check",
-                description="Check health status of all repositories",
-                task_type="health_check",
-                schedule_type="interval",
-                interval_hours=24,
-                enabled=True,
-                next_run=datetime.utcnow() + timedelta(minutes=1)  # Run after 1 minute
-            )
-            db.add(health_check_task)
-            logger.info("Created default Daily Health Check task")
-        
-        # Create metadata sync task if not exists
-        if not metadata_sync_task:
-            metadata_sync_task = ScheduledTask(
-                name="Daily Metadata Sync",
-                description="Update repository metadata from GitHub",
-                task_type="metadata_sync",
-                schedule_type="interval",
-                interval_hours=24,
-                enabled=True,
-                next_run=datetime.utcnow() + timedelta(minutes=2)  # Run after 2 minutes
-            )
-            db.add(metadata_sync_task)
-            logger.info("Created default Daily Metadata Sync task")
-        
-        db.commit()
-    except Exception as e:
-        logger.warning(f"Error initializing default scheduled tasks: {e}")
-        db.rollback()
-    finally:
-        db.close()
     
     # Start clone queue worker
     clone_queue.db_session_factory = SessionLocal
     clone_queue.start()
     
-    # Start scheduler worker
-    from services.scheduler_worker import init_scheduler_worker, shutdown_scheduler_worker
-    init_scheduler_worker(SessionLocal)
-    
     yield
     
     # Shutdown
     clone_queue.stop()
-    shutdown_scheduler_worker()
 
 app = FastAPI(
     title="GitHub Repo Deployer API",
@@ -171,7 +117,6 @@ app.include_router(auth.router)
 app.include_router(docker.router)
 app.include_router(deployment.router)
 app.include_router(analytics.router)
-app.include_router(scheduler.router)
 app.include_router(notifications.router)
 app.include_router(search.router)
 app.include_router(import_routes.router)
