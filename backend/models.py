@@ -177,36 +177,6 @@ class AuditLog(Base):
         return f"<AuditLog {self.operation} on {self.resource_type} at {self.timestamp}>"
 
 
-class ScheduledTask(Base):
-    """Scheduled task configuration"""
-    __tablename__ = "scheduled_tasks"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), unique=True, index=True)
-    description = Column(String(512), nullable=True)
-    task_type = Column(String(50), index=True)  # metadata_sync, health_check, stale_detection, auto_pull
-    schedule_type = Column(String(50))  # cron, interval
-    cron_expression = Column(String(100), nullable=True)  # e.g., "0 0 * * *" for daily
-    interval_hours = Column(Integer, nullable=True)  # e.g., 24 for daily
-    enabled = Column(Boolean, default=True, index=True)
-    
-    # Execution info
-    last_run = Column(DateTime, nullable=True)
-    next_run = Column(DateTime, nullable=True)
-    last_run_status = Column(String(20), nullable=True)  # success, failure, running
-    last_run_message = Column(String, nullable=True)
-    
-    # Configuration
-    config = Column(JSON, nullable=True)  # Task-specific config
-    
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-    def __repr__(self):
-        return f"<ScheduledTask {self.name} ({self.task_type})>"
-
-
 class UserRole(str, enum.Enum):
     """User roles for RBAC"""
     ADMIN = "admin"  # Full access 

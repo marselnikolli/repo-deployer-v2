@@ -10,7 +10,6 @@ import PasswordResetPage from '@/pages/PasswordResetPage'
 import EmailVerificationPage from '@/pages/EmailVerificationPage'
 import DockerSetupPage from '@/pages/DockerSetupPage'
 import { DeploymentPage } from '@/pages/DeploymentPage'
-import { SchedulerPage } from '@/pages/SchedulerPage'
 import { NotificationSettingsPage } from '@/pages/NotificationSettingsPage'
 import { SearchPage } from '@/pages/SearchPage'
 import ImportsPage from '@/pages/ImportsPage'
@@ -45,14 +44,6 @@ function App() {
           element={
             <ProtectedRoute>
               <DeploymentPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/scheduler"
-          element={
-            <ProtectedRoute>
-              <SchedulerPage />
             </ProtectedRoute>
           }
         />
