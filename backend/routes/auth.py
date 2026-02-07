@@ -228,6 +228,9 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
         access_token=jwt_token,
         user=UserSchema.from_orm(new_user)
     )
+
+
+@router.get("/me", response_model=UserSchema)
 def get_current_user_profile(
     token: str = None,
     db: Session = Depends(get_db)
