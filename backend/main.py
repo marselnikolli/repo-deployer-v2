@@ -84,10 +84,15 @@ async def lifespan(app: FastAPI):
     clone_queue.db_session_factory = SessionLocal
     clone_queue.start()
     
+    # Start scheduler worker
+    from services.scheduler_worker import init_scheduler_worker, shutdown_scheduler_worker
+    init_scheduler_worker(SessionLocal)
+    
     yield
     
     # Shutdown
     clone_queue.stop()
+    shutdown_scheduler_worker()
 
 app = FastAPI(
     title="GitHub Repo Deployer API",
