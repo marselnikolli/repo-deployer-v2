@@ -231,12 +231,9 @@ async def import_from_html(
         # Save all repositories (synchronously for better feedback)
         newly_imported = 0
         for bookmark in to_import:
-            # Extract owner/repo format
+            # Extract repo name only (last part of URL)
             url_parts = bookmark['url'].rstrip('/').split('/')
-            if len(url_parts) >= 2:
-                repo_name = f"{url_parts[-2]}/{url_parts[-1]}"
-            else:
-                repo_name = url_parts[-1]
+            repo_name = url_parts[-1]
             
             category = categorize_url(bookmark['url'], bookmark['title'])
             repo_data = RepositoryCreate(
@@ -317,12 +314,9 @@ async def import_from_folder(
         # Save all repositories
         newly_imported = 0
         for bookmark in to_import:
-            # Extract owner/repo format
+            # Extract repo name only (last part of URL)
             url_parts = bookmark['url'].rstrip('/').split('/')
-            if len(url_parts) >= 2:
-                repo_name = f"{url_parts[-2]}/{url_parts[-1]}"
-            else:
-                repo_name = url_parts[-1]
+            repo_name = url_parts[-1]
             
             category = categorize_url(bookmark['url'], bookmark['title'])
             repo_data = RepositoryCreate(
