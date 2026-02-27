@@ -32,7 +32,7 @@ services:
     image: redis:7-alpine
     container_name: repo-deployer-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -72,7 +72,7 @@ services:
           cpus: '2'
           memory: 2G
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -101,7 +101,7 @@ services:
           cpus: '1'
           memory: 512M
     environment:
-      REACT_APP_API_URL: http://api:8000
+      REACT_APP_API_URL: http://localhost:8001
 
 volumes:
   postgres_data:

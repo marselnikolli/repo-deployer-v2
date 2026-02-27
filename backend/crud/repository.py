@@ -67,15 +67,24 @@ def create_repository(db: Session, repo: RepositoryCreate) -> Repository:
     return db_repo
 
 
-def update_repository(db: Session, repo_id: int, repo_data: dict) -> Optional[Repository]:
-    """Update repository"""
+def update_repository(db: Session, repo_id: int, repo_data: dict = None, **kwargs) -> Optional[Repository]:
+    """Update repository with either a dict or keyword arguments"""
     db_repo = get_repository(db, repo_id)
     if not db_repo:
         return None
     
-    update_data = repo_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(db_repo, field, value)
+    # Merge repo_data dict and kwargs
+    updates = {}
+    if repo_data:
+        if hasattr(repo_data, 'dict'):  # Pydantic model
+            updates = repo_data.dict(exclude_unset=True)
+        else:
+            updates = repo_data
+    updates.update(kwargs)
+    
+    for field, value in updates.items():
+        if hasattr(db_repo, field):
+            setattr(db_repo, field, value)
     
     db_repo.updated_at = datetime.utcnow()
     db.commit()

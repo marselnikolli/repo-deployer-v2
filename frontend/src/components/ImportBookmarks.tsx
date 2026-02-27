@@ -49,9 +49,9 @@ export function ImportBookmarks() {
       message: 'Analyzing bookmarks...',
     })
 
-    // Parse the file to get count - no simulated progress to avoid render thrashing
+    // Analyze the file for preview (no import, no sync)
     try {
-      const response = await importApi.htmlFile(file)
+      const response = await importApi.analyzeHtml(file)
       
       setState((prev) => ({
         ...prev,
@@ -85,7 +85,7 @@ export function ImportBookmarks() {
         setState((prev) => {
           // Increment by 2-8 smoothly to simulate progress
           const increase = Math.random() * 6 + 2
-          const newCount = Math.min(prev.importedCount + increase, state.newlyImported - 5)
+          const newCount = Math.min(Math.floor(prev.importedCount + increase), state.newlyImported - 5)
           return {
             ...prev,
             importedCount: newCount,
@@ -110,7 +110,7 @@ export function ImportBookmarks() {
       // Complete to 100% smoothly
       let finalCount = state.newlyImported - 5
       const finalAnimateProgress = () => {
-        finalCount = Math.min(finalCount + 10, state.newlyImported)
+        finalCount = Math.min(Math.floor(finalCount + 10), state.newlyImported)
         setState((prev) => ({
           ...prev,
           importedCount: finalCount,

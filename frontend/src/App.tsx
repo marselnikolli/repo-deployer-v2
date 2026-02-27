@@ -4,6 +4,7 @@ import { HomePage } from '@/pages/HomePage'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import GitHubLoginPage from '@/pages/GitHubLoginPage'
+import GitHubBookmarksCallbackPage from '@/pages/GitHubBookmarksCallbackPage'
 import GoogleLoginPage from '@/pages/GoogleLoginPage'
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
 import PasswordResetPage from '@/pages/PasswordResetPage'
@@ -11,6 +12,7 @@ import EmailVerificationPage from '@/pages/EmailVerificationPage'
 import DockerSetupPage from '@/pages/DockerSetupPage'
 import { DeploymentPage } from '@/pages/DeploymentPage'
 import { NotificationSettingsPage } from '@/pages/NotificationSettingsPage'
+import { UserSettingsPage } from '@/pages/UserSettingsPage'
 import { SearchPage } from '@/pages/SearchPage'
 import ImportsPage from '@/pages/ImportsPage'
 import CollectionsPage from '@/pages/CollectionsPage'
@@ -37,6 +39,7 @@ function App() {
         <Route path="/reset-password" element={<PasswordResetPage />} />
         <Route path="/verify-email" element={<EmailVerificationPage />} />
         <Route path="/auth/github/callback" element={<GitHubLoginPage />} />
+        <Route path="/auth/github/bookmarks" element={<GitHubBookmarksCallbackPage />} />
         <Route path="/auth/google/callback" element={<GoogleLoginPage />} />
         <Route path="/docker/setup" element={<DockerSetupPage />} />
         <Route
@@ -52,6 +55,14 @@ function App() {
           element={
             <ProtectedRoute>
               <NotificationSettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/user-settings"
+          element={
+            <ProtectedRoute>
+              <UserSettingsPage />
             </ProtectedRoute>
           }
         />

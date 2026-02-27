@@ -17,6 +17,17 @@ A powerful, self-hosted platform for managing, cloning, and deploying GitHub rep
 - **Rate Limiting** - Smart API rate limiting with configurable chunking and delays (supports 4000+ repos)
 - **GitHub Authentication** - Optional token support for 83x higher rate limits (5000 req/hr vs 60/hr)
 - **Duplicate Detection** - Prevents importing the same repository twice
+- **GitHub OAuth Login** - Sign in and register with your GitHub account
+- **Google OAuth Login** - Sign in and register with your Google account
+
+### GitHub Profile & Bookmarks
+- **GitHub Account Connection** - Link your GitHub account from User Settings
+- **Automatic Repository Sync** - Create a private "git-bookmark" repository and sync bookmarks automatically
+- **Smart Merging** - Intelligently merge local and remote bookmarks without duplicates
+- **Scheduled Sync** - Daily automatic sync at 2:00 AM UTC
+- **Manual Sync** - Trigger sync anytime with one click
+- **Secure Token Storage** - GitHub tokens encrypted with Fernet encryption
+- **Cross-Device Sync** - Keep your bookmarks in sync across all devices via GitHub
 
 ### Clone & Deploy
 - **Batch Cloning** - Clone multiple repositories simultaneously (up to 3 concurrent)
@@ -120,6 +131,17 @@ docker-compose up --build
 | GET | `/api/export/json` | Export to JSON |
 | GET | `/api/export/markdown` | Export to Markdown |
 
+### GitHub Bookmarks
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/github-bookmarks/status` | Get GitHub bookmark connection status |
+| POST | `/api/github-bookmarks/connect` | Connect GitHub account via OAuth |
+| POST | `/api/github-bookmarks/disconnect` | Disconnect GitHub account |
+| POST | `/api/github-bookmarks/sync` | Manually trigger bookmark sync |
+| GET | `/api/github-bookmarks/data` | Get current bookmarks data |
+| POST | `/api/github-bookmarks/bookmark/add` | Add or update a bookmark |
+| DELETE | `/api/github-bookmarks/bookmark/remove` | Remove a bookmark |
+
 ### Bulk Operations
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -208,15 +230,84 @@ npm run dev
 ### Environment Variables
 
 Create `.env` in the project root:
+
 ```env
+# FastAPI settings
+SECRET_KEY=your_secret_key_here
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+ALGORITHM=HS256
+
+# GitHub OAuth Configuration (for login/registration)
+# Create app at: https://github.com/settings/developers
+# Authorization callback URL: http://localhost:3000/auth/github/callback
+GITHUB_OAUTH_CLIENT_ID=your_github_client_id
+GITHUB_OAUTH_CLIENT_SECRET=your_github_client_secret
+GITHUB_OAUTH_REDIRECT_URI=http://localhost:3000/auth/github/callback
+
+# Google OAuth Configuration (for login/registration)
+# Create credentials at: https://console.cloud.google.com/
+# Redirect URI: http://localhost:3000/auth/google/callback
+GOOGLE_OAUTH_CLIENT_ID=your_google_client_id
+GOOGLE_OAUTH_CLIENT_SECRET=your_google_client_secret
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/auth/google/callback
+
+# GitHub Bookmarks Encryption
+# Generate key: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+GITHUB_TOKEN_ENCRYPTION_KEY=your_fernet_encryption_key
+
 # GitHub API Authentication (Optional but recommended)
 # Without token: 60 requests/hour limit
 # With token: 5,000 requests/hour limit
 # Get token: https://github.com/settings/tokens (needs public_repo scope)
 GITHUB_TOKEN=github_pat_your_token_here
+
+# Email settings (optional)
+EMAIL_HOST=smtp.example.com
+EMAIL_PORT=587
+EMAIL_USER=your_email@example.com
+EMAIL_PASSWORD=your_email_password
+EMAIL_FROM=your_email@example.com
+EMAIL_FROM_NAME=Repo Deployer
 ```
 
 The application automatically loads from `.env` via Docker Compose `env_file` directive.
+
+## GitHub Profile & Bookmarks Setup
+
+### Connect Your GitHub Account
+1. Log in to Repo Deployer
+2. Click the settings icon (gear) in the top navigation
+3. Navigate to "GitHub Profile & Bookmarks" section
+4. Click "Connect GitHub Account"
+5. Authorize the application on GitHub
+6. A private "git-bookmark" repository will be created automatically
+7. Your bookmarks will be synced immediately
+
+### How It Works
+- **Initial Connection**: When you connect, the app creates a private "git-bookmark" repository and syncs all current bookmarks
+- **Scheduled Sync**: Bookmarks automatically sync daily at 2:00 AM UTC
+- **Smart Merging**: When syncing, the app intelligently merges local and remote bookmarks without creating duplicates
+- **Manual Sync**: Click "Sync Now" to trigger an immediate sync
+- **Secure Storage**: Your GitHub tokens are encrypted and stored securely
+
+### Bookmark Data Format
+Bookmarks are stored in a JSON file in your GitHub "git-bookmark" repository:
+```json
+{
+  "bookmarks": [
+    {
+      "url": "https://github.com/owner/repo",
+      "name": "Repository Name",
+      "description": "Brief description",
+      "category": "backend",
+      "addedAt": "2024-02-27T10:30:00",
+      "updatedAt": "2024-02-27T10:30:00"
+    }
+  ],
+  "lastSynced": "2024-02-27T10:30:00",
+  "syncStatus": "synced"
+}
+```
 
 ## GitHub API Rate Limiting
 
@@ -276,6 +367,6 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Version:** 2.2.0  
-**Last Updated:** February 6, 2026  
-**Features:** Repository management, bulk health checks, GitHub API rate limiting, Docker deployment
+**Version:** 2.3.0  
+**Last Updated:** February 27, 2026  
+**Features:** Repository management, GitHub & Google OAuth, bookmarks sync, bulk health checks, GitHub API rate limiting, Docker deployment

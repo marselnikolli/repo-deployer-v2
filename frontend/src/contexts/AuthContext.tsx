@@ -20,30 +20,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Check for existing token on mount
   useEffect(() => {
-    const savedToken = localStorage.getItem('auth_token');
-    const savedUsername = localStorage.getItem('username');
+    const initializeAuth = async () => {
+      const savedToken = localStorage.getItem('auth_token');
+      const savedUsername = localStorage.getItem('username');
 
-    if (savedToken && savedUsername) {
-      setToken(savedToken);
-      setUsername(savedUsername);
-      setIsAuthenticated(true);
-      
-      // Verify token is still valid
-      verifyToken(savedToken).catch(() => {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('username');
-        setIsAuthenticated(false);
-      });
-    }
+      if (savedToken && savedUsername) {
+        setToken(savedToken);
+        setUsername(savedUsername);
+        
+        // Verify token is still valid before setting authenticated
+        const valid = await verifyToken(savedToken);
+        if (valid) {
+          setIsAuthenticated(true);
+        } else {
+          // Token is invalid, clear it
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('username');
+          setIsAuthenticated(false);
+          setToken(null);
+          setUsername(null);
+        }
+      }
 
-    setLoading(false);
+      setLoading(false);
+    };
+
+    initializeAuth();
+  }, []);
+
+  // Listen for storage changes (e.g., logout from another tab)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'auth_token') {
+        if (e.newValue) {
+          const savedUsername = localStorage.getItem('username');
+          setToken(e.newValue);
+          setUsername(savedUsername);
+          setIsAuthenticated(true);
+        } else {
+          setToken(null);
+          setUsername(null);
+          setIsAuthenticated(false);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const verifyToken = async (tk: string) => {
     try {
-      const result = await api.verify(tk);
-      return result.valid;
+      // If verify() succeeds, token is valid
+      await api.verify(tk);
+      return true;
     } catch {
+      // If verify() fails (401 or other error), token is invalid
       return false;
     }
   };

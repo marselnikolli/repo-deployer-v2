@@ -1,26 +1,21 @@
-✅ FIXED: Progress bar on bookmarks import - now shows animated real-time progress
-✅ FIXED: Automatic scan metadata/health - scheduler uses GitHub token + auto health check triggers on import completion
+# Todo List
 
-## Issue Resolution Summary:
+## Completed ✅
+- [x] Fix importing numbers from URLs
+- [x] Auto-trigger metadata sync after import
+- [x] Parse README for category/tech-stack
+- [x] Add sync progress bar to footer
+- [x] Fix decimal display in import progress counter
 
-1. **Progress Bar Issue** → FIXED
-   - Was: Progress bar frozen until import completed
-   - Now: Animated real-time progress (0-100%) during import using requestAnimationFrame
+## New Features
+- [ ] Add Chrome/Firefox extension to capture GitHub URLs directly
 
-2. **Auto Health Check Issue** → FIXED (TWO PROBLEMS SOLVED)
-   - Root Cause #1: Health checks making 4,532 GitHub API requests without authentication
-     - Problem: GitHub rate limit for unauthenticated = 60/hour (insufficient)
-     - Solution: Enabled GITHUB_TOKEN in run_health_check()  
-     - Benefit: Now uses 5,000 requests/hour (83x improvement)
-   
-   - Root Cause #2: Auto health check not triggering on import completion
-     - Problem: Condition checking `jobs.length > 0` but completed jobs are removed from list
-     - Solution: Changed to only check `wasImporting && !nowRunning` (ignore job list length)
-     - Benefit: Health check now triggers immediately when imports finish
+## Future Enhancements
+- [ ] Scheduled weekly metadata re-sync
+- [ ] Bulk repository update endpoint
+- [ ] Export enriched metadata
+- [ ] Notification system for sync completion
 
-3. **Scheduler Implementation** → COMPLETE
-   - Background worker polls every 60 seconds for scheduled tasks
-   - Default tasks created: "Daily Health Check" + "Daily Metadata Sync"
-   - Executes every 24 hours with GitHub token authentication
-   - Manual health check via button now shows real-time progress with accurate counts
 
+- add a chrome/firefox extention which can capture github URLs and import them directly on the platfomr (avoids the need to bookmark them)
+- 

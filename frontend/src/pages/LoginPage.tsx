@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Lock, Mail, AlertCircle, Github, Chrome } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LoginPageProps {
   onLoginSuccess?: () => void;
@@ -9,6 +9,7 @@ interface LoginPageProps {
 
 export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,20 +28,16 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       setLoading(true);
       setError(undefined);
 
-      const response = await api.login(email, password);
-      
-      // Store token in localStorage
-      localStorage.setItem('auth_token', response.access_token);
-      localStorage.setItem('auth_type', response.token_type);
-      localStorage.setItem('username', email);
+      // Use AuthContext's login method instead of direct API call
+      await login(email, password);
       
       setSuccess(true);
       
       // Redirect after success
       setTimeout(() => {
         onLoginSuccess?.();
-        window.location.href = '/';
-      }, 1500);
+        navigate('/');
+      }, 500);
     } catch (err) {
       setError(
         err instanceof Error 

@@ -21,9 +21,11 @@ from schemas import RepositorySchema, RepositoryCreate, RepositoryUpdate, BulkAc
 from services.bookmark_parser import parse_html_bookmarks, filter_github_urls, categorize_url
 from services.git_service import clone_repo, sync_repo, get_repo_info
 from services.clone_queue import clone_queue, CloneStatus
+from services.import_sync_service import sync_repositories_metadata, get_sync_progress, reset_sync_progress, pause_sync, resume_sync, stop_sync, sync_progress
 # from services.docker_service import deploy_to_docker
 from crud import repository as repo_crud
-from routes import auth, docker, deployment, analytics, notifications, search, import_routes, collection_routes
+from routes import auth, docker, deployment, analytics, notifications, search, import_routes, collection_routes, github_bookmarks
+from services.bookmark_scheduler import bookmark_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +79,8 @@ async def lifespan(app: FastAPI):
         run_migration(db, 5, "add_import_sources_table")
         run_migration(db, 6, "add_deployments_table")
         run_migration(db, 7, "add_email_fields")
+        run_migration(db, 8, "add_github_bookmark_sync")
+        run_migration(db, 9, "remove_repository_name_unique_constraint")
     finally:
         db.close()
     
@@ -85,10 +89,14 @@ async def lifespan(app: FastAPI):
     clone_queue.db_session_factory = SessionLocal
     clone_queue.start()
     
+    # Start bookmark sync scheduler
+    bookmark_scheduler.start()
+    
     yield
     
     # Shutdown
     clone_queue.stop()
+    bookmark_scheduler.stop()
 
 app = FastAPI(
     title="GitHub Repo Deployer API",
@@ -121,6 +129,7 @@ app.include_router(notifications.router)
 app.include_router(search.router)
 app.include_router(import_routes.router)
 app.include_router(collection_routes.router)
+app.include_router(github_bookmarks.router)
 
 # Dependency
 def get_db():
@@ -133,12 +142,63 @@ def get_db():
 
 # ============ IMPORT ENDPOINTS ============
 
-@app.post("/api/import/html", response_model=ImportResponse)
-async def import_from_html(
+@app.post("/api/import/html/analyze", response_model=ImportResponse)
+async def analyze_html_bookmarks(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Import repositories from HTML bookmark file"""
+    """Analyze HTML bookmark file and return preview (no import, no sync)"""
+    try:
+        # Read uploaded file
+        contents = await file.read()
+        
+        # Parse bookmarks
+        bookmarks = parse_html_bookmarks(contents.decode('utf-8'))
+        github_urls = filter_github_urls(bookmarks)
+        
+        if not github_urls:
+            raise HTTPException(status_code=400, detail="No GitHub URLs found in file")
+        
+        # Check for duplicates in the import file and database
+        seen_urls = set()
+        unique_bookmarks = []
+        duplicates_in_file = 0
+        
+        for bookmark in github_urls:
+            if bookmark['url'] in seen_urls:
+                duplicates_in_file += 1
+            else:
+                seen_urls.add(bookmark['url'])
+                unique_bookmarks.append(bookmark)
+        
+        # Check for duplicates in database
+        duplicates_in_db = 0
+        for bookmark in unique_bookmarks:
+            existing = repo_crud.get_repo_by_url(db, bookmark['url'])
+            if existing:
+                duplicates_in_db += 1
+        
+        newly_coming = len(unique_bookmarks) - duplicates_in_db
+        
+        return ImportResponse(
+            total_found=len(github_urls),
+            duplicates_in_file=duplicates_in_file,
+            duplicates_in_db=duplicates_in_db,
+            newly_imported=newly_coming,
+            message=f"Preview: {newly_coming} new repositories to import, {duplicates_in_db} already in database, {duplicates_in_file} duplicates in file."
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/import/html", response_model=ImportResponse)
+async def import_from_html(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Import repositories from HTML bookmark file and trigger sync"""
     try:
         # Read uploaded file
         contents = await file.read()
@@ -165,6 +225,7 @@ async def import_from_html(
         # Check for duplicates in database
         duplicates_in_db = 0
         to_import = []
+        imported_repos = []
         
         for bookmark in unique_bookmarks:
             existing = repo_crud.get_repo_by_url(db, bookmark['url'])
@@ -176,35 +237,123 @@ async def import_from_html(
         # Save all repositories (synchronously for better feedback)
         newly_imported = 0
         for bookmark in to_import:
-            # Extract repo name only (last part of URL)
+            # Extract owner and repo name from URL
+            # e.g., https://github.com/owner/repo-name -> owner/repo-name
             url_parts = bookmark['url'].rstrip('/').split('/')
             repo_name = url_parts[-1]
+            owner = url_parts[-2] if len(url_parts) >= 2 else "unknown"
+            
+            # Create a full name with owner for uniqueness when displaying
+            full_name = f"{owner}/{repo_name}"
             
             category = categorize_url(bookmark['url'], bookmark['title'])
             repo_data = RepositoryCreate(
-                name=repo_name,
+                name=full_name,  # Now includes owner/repo format
                 url=bookmark['url'],
                 title=bookmark['title'],
                 category=category
             )
             try:
-                repo_crud.create_repository(db, repo_data)
+                created_repo = repo_crud.create_repository(db, repo_data)
                 newly_imported += 1
+                imported_repos.append(created_repo)
             except Exception as e:
                 # Rollback the failed transaction so we can continue
                 db.rollback()
-                logger.error(f"Failed to create repository {repo_name}: {str(e)}")
+                logger.error(f"Failed to create repository {full_name}: {str(e)}")
+        
+        # Trigger background metadata sync for newly imported repositories
+        if imported_repos:
+            github_token = os.getenv("GITHUB_TOKEN")
+            logger.info(f"Triggering background sync for {len(imported_repos)} repositories")
+            
+            # Convert ORM objects to dicts to avoid detached instance errors
+            repo_ids = [repo.id for repo in imported_repos]
+            
+            # Create a wrapper function that creates its own DB session for the background task
+            async def sync_task():
+                new_db = SessionLocal()
+                try:
+                    # Fetch fresh repository objects from the new DB session
+                    fresh_repos = new_db.query(Repository).filter(Repository.id.in_(repo_ids)).all()
+                    if fresh_repos:
+                        await sync_repositories_metadata(
+                            fresh_repos,
+                            new_db,
+                            github_token,
+                            batch_size=10,
+                            delay_between_batches=2.0
+                        )
+                except Exception as e:
+                    logger.error(f"Error in background sync task: {str(e)}")
+                    sync_progress.sync_error = f"Sync failed: {str(e)}"
+                    sync_progress.status = "failed"
+                finally:
+                    new_db.close()
+            
+            background_tasks.add_task(sync_task)
+        else:
+            logger.info("No new repositories to sync")
         
         return ImportResponse(
             total_found=len(github_urls),
             duplicates_in_file=duplicates_in_file,
             duplicates_in_db=duplicates_in_db,
             newly_imported=newly_imported,
-            message=f"Import complete: {newly_imported} repositories imported, {duplicates_in_db} already in database, {duplicates_in_file} duplicates in file"
+            message=f"Import complete: {newly_imported} repositories imported, {duplicates_in_db} already in database, {duplicates_in_file} duplicates in file. Metadata sync started in background."
         )
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/import/sync-progress")
+async def get_import_sync_progress():
+    """Get current metadata sync progress"""
+    progress_dict = get_sync_progress()
+    return {
+        "current": progress_dict.get("current", 0),
+        "total": progress_dict.get("total", 0),
+        "current_repo": progress_dict.get("current_repo", ""),
+        "elapsed_seconds": progress_dict.get("elapsed_seconds", 0),
+        "remaining_seconds": progress_dict.get("remaining_seconds", 0),
+        "success_count": progress_dict.get("success_count", 0),
+        "error_count": progress_dict.get("error_count", 0),
+        "is_running": progress_dict.get("total", 0) > 0 and progress_dict.get("current", 0) < progress_dict.get("total", 0),
+        "percentage": progress_dict.get("percentage", 0),
+        "is_paused": progress_dict.get("is_paused", False),
+        "pause_reason": progress_dict.get("pause_reason"),
+        "resume_in_seconds": progress_dict.get("resume_in_seconds", 0),
+        "sync_error": progress_dict.get("sync_error"),
+    }
+
+
+@app.post("/api/import/sync-progress/reset")
+async def reset_import_sync_progress():
+    """Reset metadata sync progress tracker"""
+    reset_sync_progress()
+    return {"message": "Sync progress reset"}
+
+
+@app.post("/api/import/sync/pause")
+async def pause_import_sync():
+    """Pause the metadata sync process"""
+    pause_sync()
+    return {"message": "Sync paused"}
+
+
+@app.post("/api/import/sync/resume")
+async def resume_import_sync():
+    """Resume the metadata sync process"""
+    resume_sync()
+    return {"message": "Sync resumed"}
+
+
+@app.post("/api/import/sync/stop")
+async def stop_import_sync():
+    """Stop the metadata sync process"""
+    stop_sync()
+    return {"message": "Sync stopped"}
 
 
 @app.post("/api/import/folder", response_model=ImportResponse)

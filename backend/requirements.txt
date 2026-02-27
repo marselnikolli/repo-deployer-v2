@@ -20,3 +20,5 @@ aioredis==2.0.1
 httpx==0.25.2
 requests==2.31.0
 pyyaml==6.0.1
+apscheduler==3.10.4
+cryptography==41.0.7

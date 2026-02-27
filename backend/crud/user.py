@@ -137,3 +137,63 @@ def delete_user(db: Session, user_id: int) -> bool:
     db.delete(user)
     db.commit()
     return True
+
+
+def set_github_bookmark_credentials(
+    db: Session, 
+    user_id: int, 
+    github_token: str,
+    github_username: str
+) -> Optional[User]:
+    """Set GitHub bookmark credentials for a user"""
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return None
+    
+    user.github_token = github_token
+    user.github_username = github_username
+    user.bookmark_sync_status = "pending"
+    user.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def clear_github_bookmark_credentials(db: Session, user_id: int) -> Optional[User]:
+    """Clear GitHub bookmark credentials for a user"""
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return None
+    
+    user.github_token = None
+    user.github_username = None
+    user.git_bookmark_repo_created = False
+    user.bookmark_sync_status = "pending"
+    user.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_bookmark_sync(
+    db: Session,
+    user_id: int,
+    sync_status: str = "synced",
+    git_bookmark_repo_created: Optional[bool] = None
+) -> Optional[User]:
+    """Update bookmark sync status for a user"""
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return None
+    
+    user.bookmark_sync_status = sync_status
+    user.last_bookmark_sync = datetime.utcnow()
+    if git_bookmark_repo_created is not None:
+        user.git_bookmark_repo_created = git_bookmark_repo_created
+    user.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(user)
+    return user

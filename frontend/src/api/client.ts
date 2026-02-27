@@ -18,6 +18,19 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Add response interceptor to suppress expected 401s on verify endpoint
+api.interceptors.response.use(
+  response => response,
+  error => {
+    // Suppress 401 errors on verify endpoint (expected when no token)
+    if (error.response?.status === 401 && error.config?.url?.includes('/auth/verify')) {
+      // Still reject the promise, but don't log the error
+      return Promise.reject({ response: error.response, silent: true })
+    }
+    return Promise.reject(error)
+  }
+)
+
 // Repository endpoints
 export const repositoryApi = {
   list: (category?: string, skip = 0, limit = 100, sortBy?: string, sortOrder?: 'asc' | 'desc') =>
@@ -86,6 +99,13 @@ export const searchApi = {
 
 // Import endpoints
 export const importApi = {
+  analyzeHtml: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/import/html/analyze', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
   htmlFile: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)

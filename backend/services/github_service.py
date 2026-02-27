@@ -7,6 +7,16 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 
+class GitHubRateLimitError(Exception):
+    """Raised when GitHub API rate limit is hit"""
+    pass
+
+
+class GitHubAuthError(Exception):
+    """Raised when GitHub API authentication fails"""
+    pass
+
+
 @dataclass
 class GitHubRepoMetadata:
     """GitHub repository metadata"""
@@ -76,9 +86,11 @@ class GitHubService:
         """
         Fetch repository metadata from GitHub API.
         Returns GitHubRepoMetadata or None if fetch fails.
+        Raises GitHubRateLimitError if rate limited.
         """
         parsed = cls.parse_github_url(url)
         if not parsed:
+            print(f"[GITHUB] Invalid GitHub URL format: {url}")
             return None
 
         owner, repo = parsed
@@ -91,8 +103,18 @@ class GitHubService:
                     headers=cls._get_headers()
                 )
 
-                if response.status_code != 200:
-                    print(f"GitHub API error: {response.status_code} for {owner}/{repo}")
+                if response.status_code == 404:
+                    print(f"[GITHUB] Repository not found: {owner}/{repo}")
+                    return None
+                elif response.status_code == 403:
+                    # Check if it's rate limit or auth error
+                    error_msg = response.text if response.text else "Access denied"
+                    if "api.github.com" in response.headers.get("server", "").lower() or "rate" in error_msg.lower():
+                        raise GitHubRateLimitError(f"Rate limited: {error_msg}")
+                    else:
+                        raise GitHubAuthError(f"Access denied: {error_msg}")
+                elif response.status_code != 200:
+                    print(f"[GITHUB] API error {response.status_code} for {owner}/{repo}")
                     return None
 
                 data = response.json()

@@ -7,6 +7,7 @@ import { ImportBookmarks } from '@/components/ImportBookmarks'
 import { RepositoryList } from '@/components/RepositoryList'
 import { AddRepository } from '@/components/AddRepository'
 import { NotificationCenter } from '@/components/NotificationCenter'
+import { ImportProgressBar } from '@/components/ImportProgressBar'
 import { DeploymentPage } from '@/pages/DeploymentPage'
 import { useTheme } from '@/providers/theme-provider'
 import { useAuth } from '@/contexts/AuthContext'
@@ -49,9 +50,9 @@ export function HomePage() {
                 <Search size={20} className="text-[var(--color-fg-quaternary)]" />
               </button>
               <button
-                onClick={() => navigate('/notification-settings')}
+                onClick={() => navigate('/user-settings')}
                 className="p-2 rounded-[var(--radius-md)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-                title="Notification Settings"
+                title="User Settings"
               >
                 <Settings size={20} className="text-[var(--color-fg-quaternary)]" />
               </button>
@@ -171,6 +172,7 @@ export function HomePage() {
           </TabPanel>
         </main>
       </Tabs>
+      <ImportProgressBar />
     </div>
   )
 }

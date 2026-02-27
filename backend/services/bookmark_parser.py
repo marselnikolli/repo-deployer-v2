@@ -111,6 +111,21 @@ def normalize_github_url(url: str) -> str:
         owner = parts[0]
         repo = parts[1]
         
+        # Validate owner and repo names
+        # GitHub usernames/org names: alphanumeric with hyphens, underscores, no leading/trailing hyphens
+        # Repo names: alphanumeric with hyphens, underscores, dots, no leading/trailing special chars
+        owner_pattern = r'^[a-zA-Z0-9_-]+$'
+        repo_pattern = r'^[a-zA-Z0-9_.-]+$'
+        
+        if not re.match(owner_pattern, owner) or not re.match(repo_pattern, repo):
+            return None
+        
+        # Ensure owner/repo don't start or end with special characters
+        if owner[0] in '-_' or owner[-1] in '-_':
+            return None
+        if repo[0] in '-_.' or repo[-1] in '-_.':
+            return None
+        
         # Reconstruct URL without branch/blob info
         normalized = f"https://github.com/{owner}/{repo}"
         return normalized

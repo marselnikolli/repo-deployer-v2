@@ -48,7 +48,7 @@ class Repository(Base):
     __tablename__ = "repositories"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), unique=True, index=True)
+    name = Column(String(255), index=True)  # Removed unique=True to allow same names from different owners
     url = Column(String(512), unique=True, index=True)
     title = Column(String(2048))
     description = Column(String(4096), nullable=True)
@@ -139,6 +139,13 @@ class User(Base):
     avatar_url = Column(String(512), nullable=True)
     profile = Column(JSON, nullable=True)  # Additional profile info
     api_keys = Column(JSON, nullable=True)  # List of API keys
+    
+    # GitHub bookmark sync fields
+    github_token = Column(String(500), nullable=True, unique=True)  # Personal access token for git-bookmark repo
+    github_username = Column(String(255), nullable=True)  # GitHub username for bookmark account
+    git_bookmark_repo_created = Column(Boolean, default=False)  # Track if git-bookmark repo was created
+    last_bookmark_sync = Column(DateTime, nullable=True)  # Last successful sync time
+    bookmark_sync_status = Column(String(50), default="pending")  # pending, synced, failed
     
     # Email verification
     email_verified_at = Column(DateTime, nullable=True)
