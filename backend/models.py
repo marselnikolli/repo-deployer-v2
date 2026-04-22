@@ -53,12 +53,17 @@ class Repository(Base):
     title = Column(String(2048))
     description = Column(String(4096), nullable=True)
     category = Column(String(50), default=CategoryEnum.OTHER, index=True)
+    category_source = Column(String(20), nullable=True)  # api_metadata | stealth_fetch | url_heuristics
     path = Column(String(512), nullable=True)
 
     # Status
     cloned = Column(Boolean, default=False)
     deployed = Column(Boolean, default=False)
     last_synced = Column(DateTime, nullable=True)
+
+    # ZIP archive status
+    zip_status = Column(String(20), nullable=True, default=None)  # pending | in_progress | done | failed
+    zip_path = Column(String(512), nullable=True)  # path to .zip archive
 
     # GitHub metadata
     stars = Column(Integer, default=0)
@@ -378,3 +383,75 @@ class Deployment(Base):
 
     def __repr__(self):
         return f"<Deployment {self.repo_name}:{self.assigned_port} ({self.status})>"
+
+
+class SearchHistory(Base):
+    """Search history for users"""
+    __tablename__ = "search_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Search query and filters
+    query = Column(String(255), nullable=True)  # Search text
+    language = Column(String(100), nullable=True)
+    min_stars = Column(Integer, nullable=True)
+    max_stars = Column(Integer, nullable=True)
+    health_status = Column(String(50), nullable=True)
+    is_fork = Column(Boolean, nullable=True)
+    is_archived = Column(Boolean, nullable=True)
+    category = Column(String(50), nullable=True)
+    updated_after = Column(DateTime, nullable=True)
+    updated_before = Column(DateTime, nullable=True)
+    
+    # Sort and pagination
+    sort_by = Column(String(50), default="name")
+    sort_order = Column(String(10), default="asc")
+    
+    # Results count
+    results_count = Column(Integer, default=0)
+    
+    # Timestamp
+    searched_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    def __repr__(self):
+        return f"<SearchHistory {self.query or 'all'} ({self.results_count} results)>"
+
+
+class SavedSearch(Base):
+    """Saved search queries for quick access"""
+    __tablename__ = "saved_searches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Display info
+    name = Column(String(255), nullable=False)  # e.g., "React Security Tools"
+    description = Column(String(512), nullable=True)
+    
+    # Search query and filters
+    query = Column(String(255), nullable=True)  # Search text
+    language = Column(String(100), nullable=True)
+    min_stars = Column(Integer, nullable=True)
+    max_stars = Column(Integer, nullable=True)
+    health_status = Column(String(50), nullable=True)
+    is_fork = Column(Boolean, nullable=True)
+    is_archived = Column(Boolean, nullable=True)
+    category = Column(String(50), nullable=True)
+    updated_after = Column(DateTime, nullable=True)
+    updated_before = Column(DateTime, nullable=True)
+    
+    # Sort preferences
+    sort_by = Column(String(50), default="name")
+    sort_order = Column(String(10), default="asc")
+    
+    # Usage tracking
+    times_used = Column(Integer, default=0)
+    last_used = Column(DateTime(timezone=True), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<SavedSearch {self.name}>"

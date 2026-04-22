@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2, Loader } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader, Info } from 'lucide-react'
 import { cx } from '@/utils/cx'
 import { ErrorModal } from './ErrorModal'
 
@@ -26,6 +26,15 @@ export function ImportProgressBar() {
   const [countdownSeconds, setCountdownSeconds] = useState(0)
   const [showErrorModal, setShowErrorModal] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [githubApiConfigured, setGithubApiConfigured] = useState<boolean | null>(null)
+
+  // Check once whether the GitHub API key is configured
+  useEffect(() => {
+    fetch('/api/config/status')
+      .then((r) => r.json())
+      .then((d) => setGithubApiConfigured(d.github_api_key_configured ?? false))
+      .catch(() => setGithubApiConfigured(false))
+  }, [])
 
   useEffect(() => {
     // Poll for sync progress
@@ -127,9 +136,19 @@ export function ImportProgressBar() {
                 <CheckCircle2 size={18} className="text-green-500" />
               )}
               <span className="text-sm font-medium text-[var(--color-fg-primary)]">
-                {progress.is_paused ? 'Sync Paused' : 'Syncing Repository Metadata'}
+                {progress.is_paused
+                  ? 'Sync Paused'
+                  : githubApiConfigured
+                  ? 'Syncing Repository Metadata'
+                  : 'Syncing via Stealth Fetch'}
               </span>
             </div>
+            {!githubApiConfigured && !progress.is_paused && (
+              <span className="flex items-center gap-1 text-xs text-[var(--color-fg-tertiary)]">
+                <Info size={12} />
+                No GitHub API key — using public page parsing
+              </span>
+            )}
             <div className="text-xs text-[var(--color-fg-tertiary)]">
               {progress.current}/{progress.total} repositories
             </div>
@@ -198,7 +217,7 @@ export function ImportProgressBar() {
           <div className="w-full bg-[var(--color-bg-tertiary)] rounded-[var(--radius-sm)] h-2 overflow-hidden">
             <div
               className={cx(
-                'h-full transition-all duration-300',
+                'h-2 transition-all duration-300',
                 progress.is_paused
                   ? progress.pause_reason?.toLowerCase().includes("rate limit")
                     ? 'bg-yellow-500'
@@ -207,7 +226,9 @@ export function ImportProgressBar() {
                     ? 'bg-orange-500' 
                     : 'bg-[var(--color-brand-500)]'
               )}
-              style={{ width: `${progress.percentage}%` }}
+              style={{
+                width: `${progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0}%`,
+              }}
             />
           </div>
 

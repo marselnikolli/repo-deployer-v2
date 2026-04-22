@@ -14,6 +14,8 @@ import {
   Copy,
   Server,
   Download,
+  FileArchive,
+  Loader2,
 } from 'lucide-react'
 import { repositoryApi } from '@/api/client'
 import { cx } from '@/utils/cx'
@@ -25,6 +27,7 @@ interface Repository {
   title: string
   url: string
   category: string
+  category_source?: string
   description?: string
   cloned: boolean
   deployed: boolean
@@ -47,6 +50,8 @@ interface Repository {
   last_metadata_sync?: string
   health_status?: string
   last_health_check?: string
+  zip_status?: string
+  zip_path?: string
   tags?: Array<{ id: number; name: string; color: string }>
 }
 
@@ -60,6 +65,44 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
   const [repo, setRepo] = useState<Repository>(repository)
   const [syncing, setSyncing] = useState(false)
   const [cloning, setCloning] = useState(false)
+  const [zipLoading, setZipLoading] = useState(false)
+  const [zipStatus, setZipStatus] = useState<string | null>(repo.zip_status ?? null)
+
+  // Poll ZIP status while in-progress or pending
+  useEffect(() => {
+    if (zipStatus !== 'pending' && zipStatus !== 'in_progress') return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/repositories/${repo.id}/zip/status`)
+        const data = await res.json()
+        setZipStatus(data.status ?? null)
+        if (data.status === 'done') {
+          toast.success('ZIP archive ready!')
+          clearInterval(interval)
+        } else if (data.status === 'failed') {
+          toast.error('ZIP archive failed')
+          clearInterval(interval)
+        }
+      } catch {
+        // ignore
+      }
+    }, 1500)
+    return () => clearInterval(interval)
+  }, [zipStatus, repo.id])
+
+  const handleEnqueueZip = async () => {
+    try {
+      setZipLoading(true)
+      const res = await fetch(`/api/repositories/${repo.id}/zip`, { method: 'POST' })
+      const data = await res.json()
+      setZipStatus(data.status ?? 'pending')
+      toast.success('ZIP archive queued!')
+    } catch {
+      toast.error('Failed to queue ZIP archive')
+    } finally {
+      setZipLoading(false)
+    }
+  }
 
   const handleSyncMetadata = async () => {
     try {
@@ -301,14 +344,51 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)]">
-          <button
-            onClick={handleSyncMetadata}
-            disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[var(--color-fg-primary)] bg-[var(--color-bg-primary)] border border-[var(--color-border-primary)] rounded-lg hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw className={cx('size-4', syncing && 'animate-spin')} />
-            Sync Metadata
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSyncMetadata}
+              disabled={syncing}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[var(--color-fg-primary)] bg-[var(--color-bg-primary)] border border-[var(--color-border-primary)] rounded-lg hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={cx('size-4', syncing && 'animate-spin')} />
+              Sync Metadata
+            </button>
+            {/* ZIP archive button */}
+            <button
+              onClick={handleEnqueueZip}
+              disabled={zipLoading || zipStatus === 'in_progress' || zipStatus === 'pending'}
+              title={
+                zipStatus === 'done'
+                  ? 'ZIP archive ready'
+                  : zipStatus === 'in_progress' || zipStatus === 'pending'
+                  ? 'ZIP in progress…'
+                  : 'Download ZIP archive'
+              }
+              className={cx(
+                'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-60',
+                zipStatus === 'done'
+                  ? 'text-green-700 bg-green-50 border-green-200 hover:bg-green-100'
+                  : zipStatus === 'failed'
+                  ? 'text-red-700 bg-red-50 border-red-200 hover:bg-red-100'
+                  : 'text-[var(--color-fg-primary)] bg-[var(--color-bg-primary)] border-[var(--color-border-primary)] hover:bg-[var(--color-bg-tertiary)]'
+              )}
+            >
+              {zipStatus === 'in_progress' || zipStatus === 'pending' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <FileArchive className="size-4" />
+              )}
+              {zipStatus === 'done'
+                ? 'ZIP Ready'
+                : zipStatus === 'in_progress'
+                ? 'Archiving…'
+                : zipStatus === 'pending'
+                ? 'Queued'
+                : zipStatus === 'failed'
+                ? 'Retry ZIP'
+                : 'Save ZIP'}
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             {!repo.cloned && (
               <button

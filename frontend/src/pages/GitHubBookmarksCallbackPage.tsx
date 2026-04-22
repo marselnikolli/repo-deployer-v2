@@ -39,7 +39,7 @@ export default function GitHubBookmarksCallbackPage() {
         }
 
         // Exchange code for GitHub token and connect account
-        const response = await fetch('http://localhost:8000/api/github-bookmarks/connect', {
+        const response = await fetch('/api/github-bookmarks/connect', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

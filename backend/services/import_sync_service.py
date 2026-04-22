@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from models import Repository
 from services.github_service import GitHubService, GitHubRateLimitError, GitHubAuthError
 from services.readme_parser import ReadmeParser
+from services.bookmark_parser import smart_categorize
 from crud.repository import update_repository
 import os
 import time
@@ -158,10 +159,20 @@ async def sync_repository_metadata(
         owner = parts[-2]
         repo_name = parts[-1]
         
-        # Fetch metadata
+        # Fetch metadata (GitHub API)
         metadata = await GitHubService.fetch_repo_metadata(repo.url)
         
         if metadata:
+            # Determine category using three-level smart categorization
+            category, category_source = await smart_categorize(
+                repo.url,
+                repo.title or repo.name or "",
+                github_token=github_token,
+                language=metadata.language,
+                topics=metadata.topics,
+                description=metadata.description,
+            )
+
             # Update repository with metadata
             updates = {
                 'stars': metadata.stars,
@@ -180,22 +191,29 @@ async def sync_repository_metadata(
                 'github_pushed_at': metadata.pushed_at,
                 'last_metadata_sync': datetime.utcnow(),
                 'health_status': 'healthy',
+                'category': category,
+                'category_source': category_source,
             }
+
+            # Update description from API if better than what we have
+            if metadata.description and (not repo.description or len(repo.description) < 50):
+                updates['description'] = metadata.description
             
-            # Try to fetch README for better categorization
+            # Try to fetch README for even richer description / category refinement
             try:
                 readme_content = await ReadmeParser.fetch_readme(owner, repo_name, github_token)
                 if readme_content:
-                    # Update category if README provides better info
+                    # Only override category if README yields a more specific result
                     best_category = ReadmeParser.determine_best_category(
                         readme_content,
-                        repo.category
+                        category
                     )
-                    if best_category != repo.category:
+                    if best_category != category:
                         updates['category'] = best_category
+                        updates['category_source'] = 'readme_parse'
                     
-                    # Extract description if not set
-                    if not repo.description or len(repo.description) < 50:
+                    # Extract description if still not set
+                    if not updates.get('description') and (not repo.description or len(repo.description) < 50):
                         extracted_desc = ReadmeParser.extract_description(readme_content)
                         if extracted_desc:
                             updates['description'] = extracted_desc
@@ -205,7 +223,12 @@ async def sync_repository_metadata(
             update_repository(db, repo.id, updates)
             return True
         else:
-            # Repository might not exist
+            # GitHub API unavailable — fall back to stealth fetch for metadata + category
+            category, category_source = await smart_categorize(
+                repo.url,
+                repo.title or repo.name or "",
+            )
+            # Repository might not exist on GitHub
             error_msg = f"Repository metadata not found: {repo.url}"
             print(f"[SYNC] {error_msg}")
             update_repository(
@@ -213,7 +236,9 @@ async def sync_repository_metadata(
                 repo.id,
                 {
                     'health_status': 'not_found',
-                    'last_health_check': datetime.utcnow()
+                    'last_health_check': datetime.utcnow(),
+                    'category': category,
+                    'category_source': category_source,
                 }
             )
             return False

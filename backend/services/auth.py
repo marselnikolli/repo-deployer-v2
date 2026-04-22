@@ -42,7 +42,7 @@ def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None)
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     payload = {
-        "sub": user_id,
+        "sub": str(user_id),  # Convert to string for JWT spec compliance
         "exp": expire,
         "iat": datetime.now(timezone.utc)
     }
@@ -54,14 +54,24 @@ def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None)
 def decode_access_token(token: str) -> Optional[int]:
     """Decode a JWT access token and return user_id"""
     try:
+        print(f"DEBUG decode_access_token: decoding token {token[:20]}...")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        print(f"DEBUG decode_access_token: decoded payload = {payload}")
+        
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
+            print(f"ERROR: No 'sub' claim in token")
             return None
+        
+        # Convert string back to int
+        user_id = int(user_id_str)
+        print(f"SUCCESS: Decoded user_id = {user_id}")
         return user_id
-    except jwt.ExpiredSignatureError:
+    except jwt.ExpiredSignatureError as e:
+        print(f"ERROR: Token expired - {e}")
         return None
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        print(f"ERROR: Invalid token - {e}")
         return None
 
 

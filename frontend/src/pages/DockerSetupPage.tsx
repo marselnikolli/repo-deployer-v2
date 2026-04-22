@@ -25,14 +25,14 @@ export default function DockerSetupPage() {
   useEffect(() => {
     const fetchSystemInfo = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/docker/check-installation');
+        const response = await fetch('/api/docker/check-installation');
         if (!response.ok) throw new Error('Failed to fetch system info');
         const data = await response.json();
         setSystemInfo(data);
 
         // If not ready, fetch install commands
         if (!data.ready) {
-          const cmdResponse = await fetch('http://localhost:8000/api/docker/install-commands');
+          const cmdResponse = await fetch('/api/docker/install-commands');
           if (cmdResponse.ok) {
             const cmdData = await cmdResponse.json();
             setInstallCommands(cmdData);

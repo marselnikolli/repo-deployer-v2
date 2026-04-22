@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader, AlertCircle, CheckCircle } from 'lucide-react';
 
@@ -8,12 +8,25 @@ export default function GoogleLoginPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const processedRef = useRef(false);
 
   useEffect(() => {
+    // Prevent double execution
+    if (processedRef.current) return;
+    
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
+    const error = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+
     const handleGoogleCallback = async () => {
       try {
-        const code = searchParams.get('code');
-        // const state = searchParams.get('state'); // Not used in callback validation
+        // Handle OAuth errors
+        if (error) {
+          setError(`Authentication failed: ${error} - ${errorDescription || 'Unknown error'}`);
+          setLoading(false);
+          return;
+        }
 
         if (!code) {
           setError('No authorization code received from Google');
@@ -21,36 +34,59 @@ export default function GoogleLoginPage() {
           return;
         }
 
-        // Exchange code for JWT token
-        const response = await fetch('http://localhost:8000/api/auth/oauth/google/callback', {
+        console.log('Google callback - Code:', code?.substring(0, 20) + '...' || 'None', 'State:', state);
+
+        // Clear stored state from sessionStorage
+        sessionStorage.removeItem('google_oauth_state');
+
+        // Exchange code for JWT token (pass state to backend for validation)
+        const response = await fetch('/api/auth/oauth/google/callback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code })
+          body: JSON.stringify({ code, state })
         });
 
+        console.log('Backend callback response status:', response.status);
+
         if (!response.ok) {
-          throw new Error('Failed to authenticate with Google');
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Backend error response:', errorData);
+          throw new Error(errorData.detail || `Failed to authenticate with Google (${response.status})`);
         }
 
         const data = await response.json();
+        console.log('Token response:', data);
         
         // Save token and user info
         localStorage.setItem('auth_token', data.access_token);
         localStorage.setItem('auth_type', 'Bearer');
         localStorage.setItem('username', data.user.email);
         
+        console.log('Token saved to localStorage:', {
+          token: data.access_token?.substring(0, 20),
+          email: data.user.email
+        });
+        
         setSuccess(true);
         setLoading(false);
 
-        // Redirect to home after success animation
-        setTimeout(() => navigate('/'), 1500);
+        // Redirect to home after success animation with hard reload
+        setTimeout(() => {
+          navigate('/');
+          window.location.href = '/';
+        }, 1500);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Authentication failed');
         setLoading(false);
       }
     };
 
-    handleGoogleCallback();
+    if (code) {
+      processedRef.current = true;
+      handleGoogleCallback();
+    } else {
+      setLoading(false);
+    }
   }, [searchParams, navigate]);
 
   if (loading) {

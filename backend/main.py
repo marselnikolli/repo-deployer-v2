@@ -18,9 +18,10 @@ from datetime import timedelta
 from database import engine, SessionLocal, init_db
 from models import Repository, Category, Base
 from schemas import RepositorySchema, RepositoryCreate, RepositoryUpdate, BulkActionRequest, ImportResponse
-from services.bookmark_parser import parse_html_bookmarks, filter_github_urls, categorize_url
+from services.bookmark_parser import parse_html_bookmarks, filter_github_urls, categorize_url, smart_categorize, normalize_github_url
 from services.git_service import clone_repo, sync_repo, get_repo_info
 from services.clone_queue import clone_queue, CloneStatus
+from services.zip_queue import zip_queue
 from services.import_sync_service import sync_repositories_metadata, get_sync_progress, reset_sync_progress, pause_sync, resume_sync, stop_sync, sync_progress
 # from services.docker_service import deploy_to_docker
 from crud import repository as repo_crud
@@ -43,10 +44,12 @@ def run_migration(db: Session, migration_number: int, migration_name: str):
         migration_file = f'migrations/{migration_number:03d}_{migration_name}.sql'
         with open(migration_file, 'r') as f:
             migration_sql = f.read()
-            # Split by semicolon but skip comments and empty lines
+            # Split by semicolon; strip comment lines before deciding to execute
             for statement in migration_sql.split(';'):
-                statement = statement.strip()
-                if statement and not statement.startswith('--'):
+                # Remove comment-only lines so a leading comment doesn't suppress the statement
+                sql_lines = [l for l in statement.splitlines() if not l.strip().startswith('--')]
+                statement = '\n'.join(sql_lines).strip()
+                if statement:
                     try:
                         db.execute(text(statement))
                     except Exception as stmt_err:
@@ -81,6 +84,8 @@ async def lifespan(app: FastAPI):
         run_migration(db, 7, "add_email_fields")
         run_migration(db, 8, "add_github_bookmark_sync")
         run_migration(db, 9, "remove_repository_name_unique_constraint")
+        run_migration(db, 10, "add_category_source_and_zip_status")
+        run_migration(db, 11, "add_search_history_and_saved_searches")
     finally:
         db.close()
     
@@ -88,6 +93,10 @@ async def lifespan(app: FastAPI):
     # Start clone queue worker
     clone_queue.db_session_factory = SessionLocal
     clone_queue.start()
+
+    # Start ZIP archive queue worker
+    zip_queue.set_db_factory(SessionLocal)
+    zip_queue.start()
     
     # Start bookmark sync scheduler
     bookmark_scheduler.start()
@@ -96,6 +105,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     clone_queue.stop()
+    zip_queue.stop()
     bookmark_scheduler.stop()
 
 app = FastAPI(
@@ -141,6 +151,65 @@ def get_db():
 
 
 # ============ IMPORT ENDPOINTS ============
+
+class SingleUrlImport(BaseModel):
+    url: str
+
+
+@app.post("/api/repositories/import-url")
+async def import_single_url(
+    payload: SingleUrlImport,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Import a single GitHub repository URL (used by the browser extension).
+    Returns 409 if the repo is already in the database.
+    """
+    norm = normalize_github_url(payload.url)
+    if not norm:
+        raise HTTPException(status_code=400, detail="Not a valid GitHub repository URL")
+
+    existing = repo_crud.get_repo_by_url(db, norm)
+    if existing:
+        raise HTTPException(status_code=409, detail="Repository already exists")
+
+    url_parts = norm.rstrip('/').split('/')
+    repo_name = url_parts[-1]
+    owner = url_parts[-2] if len(url_parts) >= 2 else "unknown"
+    full_name = f"{owner}/{repo_name}"
+    category = categorize_url(norm, full_name)
+
+    repo_data = RepositoryCreate(name=full_name, url=norm, title=full_name, category=category)
+    try:
+        new_repo = repo_crud.create_repository(db, repo_data)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Fire off background metadata sync + ZIP
+    github_token = os.getenv("GITHUB_TOKEN")
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    zip_path = os.path.join(repos_dir, f"{full_name.replace('/', '_')}.zip")
+    zip_queue.enqueue(new_repo.id, norm, zip_path)
+
+    repo_id = new_repo.id
+
+    async def sync_task():
+        new_db = SessionLocal()
+        try:
+            fresh = new_db.query(Repository).filter(Repository.id == repo_id).first()
+            if fresh:
+                await sync_repositories_metadata([fresh], new_db, github_token)
+        except Exception as e:
+            logger.error(f"[EXTENSION IMPORT] Sync error: {e}")
+        finally:
+            new_db.close()
+
+    background_tasks.add_task(sync_task)
+
+    return {"id": new_repo.id, "name": full_name, "url": norm, "category": category}
+
 
 @app.post("/api/import/html/analyze", response_model=ImportResponse)
 async def analyze_html_bookmarks(
@@ -246,6 +315,7 @@ async def import_from_html(
             # Create a full name with owner for uniqueness when displaying
             full_name = f"{owner}/{repo_name}"
             
+            # Use basic heuristics at import time; smart categorization runs during sync
             category = categorize_url(bookmark['url'], bookmark['title'])
             repo_data = RepositoryCreate(
                 name=full_name,  # Now includes owner/repo format
@@ -265,10 +335,16 @@ async def import_from_html(
         # Trigger background metadata sync for newly imported repositories
         if imported_repos:
             github_token = os.getenv("GITHUB_TOKEN")
+            repos_dir = os.getenv("REPOS_DIR", "/app/repos")
             logger.info(f"Triggering background sync for {len(imported_repos)} repositories")
             
             # Convert ORM objects to dicts to avoid detached instance errors
             repo_ids = [repo.id for repo in imported_repos]
+
+            # Enqueue ZIP jobs in parallel with sync — non-blocking
+            for repo in imported_repos:
+                zip_path = os.path.join(repos_dir, f"{repo.name.replace('/', '_')}.zip")
+                zip_queue.enqueue(repo.id, repo.url, zip_path)
             
             # Create a wrapper function that creates its own DB session for the background task
             async def sync_task():
@@ -305,6 +381,80 @@ async def import_from_html(
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/config/status")
+async def get_config_status():
+    """Return which optional integrations are configured"""
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    return {
+        "github_api_key_configured": bool(github_token),
+    }
+
+
+# ─── ZIP archive endpoints ─────────────────────────────────────────────────────
+
+@app.post("/api/repositories/{repo_id}/zip")
+async def enqueue_zip(
+    repo_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user=Depends(lambda: None),  # public — actual auth handled per-route if needed
+):
+    """Enqueue a ZIP archive job for a single repository."""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    zip_path = os.path.join(repos_dir, f"{repo.name.replace('/', '_')}.zip")
+
+    enqueued = zip_queue.enqueue(repo_id, repo.url, zip_path)
+    status = zip_queue.get_status(repo_id) or {}
+    return {"enqueued": enqueued, **status}
+
+
+@app.get("/api/repositories/{repo_id}/zip/status")
+async def get_zip_status(repo_id: int, db: Session = Depends(get_db)):
+    """Get the ZIP archive status for a repository."""
+    status = zip_queue.get_status(repo_id)
+    if status:
+        return status
+    # Fall back to database value
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return {"repo_id": repo_id, "status": repo.zip_status or "none", "zip_path": repo.zip_path}
+
+
+@app.get("/api/zip/statuses")
+async def get_all_zip_statuses():
+    """Return ZIP statuses for all repos currently tracked by the queue."""
+    return zip_queue.get_all_statuses()
+
+
+@app.post("/api/zip/sync")
+async def trigger_zip_sync(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Enqueue ZIP jobs for every repository that does not yet have a local archive.
+    Runs in the background — returns immediately.
+    """
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    repos_without_zip = (
+        db.query(Repository)
+        .filter(
+            (Repository.zip_status == None) | (Repository.zip_status == "failed")  # noqa: E711
+        )
+        .all()
+    )
+
+    enqueued_count = 0
+    for repo in repos_without_zip:
+        zip_path = os.path.join(repos_dir, f"{repo.name.replace('/', '_')}.zip")
+        if zip_queue.enqueue(repo.id, repo.url, zip_path):
+            enqueued_count += 1
+
+    return {"enqueued": enqueued_count, "total_without_zip": len(repos_without_zip)}
 
 
 @app.get("/api/import/sync-progress")
@@ -412,6 +562,7 @@ async def import_from_folder(
             url_parts = bookmark['url'].rstrip('/').split('/')
             repo_name = url_parts[-1]
             
+            # Use basic heuristics at import time; smart categorization runs during sync
             category = categorize_url(bookmark['url'], bookmark['title'])
             repo_data = RepositoryCreate(
                 name=repo_name,

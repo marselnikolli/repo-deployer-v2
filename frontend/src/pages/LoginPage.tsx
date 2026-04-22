@@ -51,9 +51,19 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   const handleGitHubLogin = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/auth/oauth/github/authorize');
+      // Generate CSRF protection state parameter
+      const state = Math.random().toString(36).substring(2, 15) + 
+                   Math.random().toString(36).substring(2, 15);
+      sessionStorage.setItem('github_oauth_state', state);
+      
+      const response = await fetch('/api/auth/oauth/github/authorize');
       const data = await response.json();
-      window.location.href = data.authorization_url;
+      
+      // Add state parameter to authorization URL
+      const url = new URL(data.authorization_url);
+      url.searchParams.set('state', state);
+      
+      window.location.href = url.toString();
     } catch (err) {
       setError('Failed to initiate GitHub login');
     }
@@ -61,9 +71,19 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   const handleGoogleLogin = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/auth/oauth/google/authorize');
+      // Generate CSRF protection state parameter
+      const state = Math.random().toString(36).substring(2, 15) + 
+                   Math.random().toString(36).substring(2, 15);
+      sessionStorage.setItem('google_oauth_state', state);
+      
+      const response = await fetch('/api/auth/oauth/google/authorize');
       const data = await response.json();
-      window.location.href = data.authorization_url;
+      
+      // Add state parameter to authorization URL
+      const url = new URL(data.authorization_url);
+      url.searchParams.set('state', state);
+      
+      window.location.href = url.toString();
     } catch (err) {
       setError('Failed to initiate Google login');
     }

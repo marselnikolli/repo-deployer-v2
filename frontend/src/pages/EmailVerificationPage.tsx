@@ -20,7 +20,7 @@ export default function EmailVerificationPage() {
       }
 
       try {
-        const response = await fetch('http://localhost:8000/api/auth/email-verify', {
+        const response = await fetch('/api/auth/email-verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token }),

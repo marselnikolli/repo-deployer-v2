@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Search, Filter, ChevronLeft, ChevronRight, Star, Calendar, Code } from 'lucide-react'
+import { Search, Filter, ChevronLeft, ChevronRight, Star, Calendar, Code, Clock, BookmarkIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { SearchHistory } from '../components/SearchHistory'
+import { SavedSearches } from '../components/SavedSearches'
 
 interface Repository {
   id: number
@@ -44,6 +46,11 @@ export function SearchPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
   const [showFilters, setShowFilters] = useState(false)
+  const [showSearchHistory, setShowSearchHistory] = useState(false)
+  const [showSavedSearches, setShowSavedSearches] = useState(false)
+
+  // Mock user ID (in real app, get from context/auth)
+  const userId = 1
 
   // Filter state
   const [filters, setFilters] = useState({
@@ -107,6 +114,8 @@ export function SearchPage() {
         const data: SearchResponse = await response.json()
         setResults(data.results)
         setTotalResults(data.total)
+        // Record search to history
+        recordSearchHistory(data.total)
       }
     } catch (error) {
       toast.error('Failed to perform search')
@@ -120,6 +129,45 @@ export function SearchPage() {
     e.preventDefault()
     setCurrentPage(1)
     performSearch()
+  }
+
+  const handleSelectSearch = (search: Partial<any>) => {
+    if (search.query !== undefined && search.query !== null) {
+      setSearchQuery(search.query)
+    }
+    if (search.category) {
+      setFilters(prev => ({ ...prev, category: search.category }))
+    }
+    if (search.language) {
+      setFilters(prev => ({ ...prev, language: search.language }))
+    }
+    if (search.health_status) {
+      setFilters(prev => ({ ...prev, healthStatus: search.health_status }))
+    }
+    setCurrentPage(1)
+    setTimeout(() => performSearch(), 0)
+  }
+
+  const recordSearchHistory = async (resultsCount: number) => {
+    try {
+      const params = new URLSearchParams({
+        user_id: userId.toString(),
+        results_count: resultsCount.toString()
+      })
+
+      if (searchQuery) params.append('q', searchQuery)
+      if (filters.language) params.append('language', filters.language)
+      if (filters.minStars) params.append('min_stars', filters.minStars)
+      if (filters.maxStars) params.append('max_stars', filters.maxStars)
+      if (filters.healthStatus) params.append('health_status', filters.healthStatus)
+      if (filters.category) params.append('category', filters.category)
+      params.append('sort_by', filters.sortBy)
+      params.append('sort_order', filters.sortOrder)
+
+      await fetch(`/api/search/history?${params}`, { method: 'POST' })
+    } catch (error) {
+      console.error('Failed to record search history:', error)
+    }
   }
 
   const handleFilterChange = (key: string, value: string) => {
@@ -191,6 +239,22 @@ export function SearchPage() {
               }`}
             >
               <Filter size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSearchHistory(true)}
+              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg font-medium transition"
+              title="View search history"
+            >
+              <Clock size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSavedSearches(true)}
+              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg font-medium transition"
+              title="Manage saved searches"
+            >
+              <BookmarkIcon size={18} />
             </button>
           </form>
         </div>
@@ -456,6 +520,22 @@ export function SearchPage() {
           </>
         )}
       </div>
+
+      {/* Search History Modal */}
+      <SearchHistory
+        userId={userId}
+        onSelectSearch={handleSelectSearch}
+        isOpen={showSearchHistory}
+        onClose={() => setShowSearchHistory(false)}
+      />
+
+      {/* Saved Searches Modal */}
+      <SavedSearches
+        userId={userId}
+        onSelectSearch={handleSelectSearch}
+        isOpen={showSavedSearches}
+        onClose={() => setShowSavedSearches(false)}
+      />
     </div>
   )
 }

@@ -1,8 +1,10 @@
 """Bookmark parsing and GitHub URL extraction"""
 
 from html.parser import HTMLParser
-from typing import List, Dict
+from typing import List, Dict, Optional, Tuple
 import re
+import os
+import asyncio
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 
@@ -171,3 +173,141 @@ def categorize_url(url: str, title: str) -> str:
         return "frontend"
     
     return "other"
+
+
+# ─── Smart categorization helpers ─────────────────────────────────────────────
+
+_CATEGORY_KEYWORDS: Dict[str, List[str]] = {
+    "security": ["security", "crypto", "encryption", "ssl", "tls", "auth", "oauth", "jwt", "password", "vault", "cve", "pentest", "exploit", "malware", "firewall"],
+    "ci_cd": ["ci", "cd", "jenkins", "github-actions", "gitlab-ci", "pipeline", "workflow", "deploy", "argo", "tekton", "circleci"],
+    "database": ["database", "sql", "nosql", "mysql", "postgres", "mongodb", "redis", "cassandra", "elasticsearch", "sqlite", "orm", "migration", "query"],
+    "devops": ["devops", "docker", "kubernetes", "k8s", "terraform", "ansible", "prometheus", "grafana", "helm", "infrastructure", "iac", "monitoring"],
+    "api": ["api", "rest", "graphql", "grpc", "swagger", "openapi", "endpoint", "webhook", "rpc"],
+    "frontend": ["frontend", "react", "vue", "angular", "svelte", "next.js", "nuxt", "javascript", "typescript", "html", "css", "ui", "ux", "design-system", "component"],
+    "backend": ["backend", "python", "java", "node", "golang", "rust", "dotnet", "spring", "django", "fastapi", "flask", "express", "rails", "laravel"],
+    "ml_ai": ["machine learning", "ml", "ai", "tensorflow", "pytorch", "scikit", "neural", "model", "deep learning", "llm", "gpt", "nlp", "computer vision", "transformer"],
+    "embedded": ["embedded", "arduino", "iot", "firmware", "microcontroller", "rtos", "esp32", "raspberry", "fpga"],
+    "documentation": ["docs", "documentation", "guide", "tutorial", "blog", "wiki", "handbook", "awesome-list", "cheatsheet"],
+    "tools": ["tool", "utility", "cli", "command-line", "plugin", "extension", "automation", "script", "generator"],
+    "library": ["library", "lib", "framework", "package", "module", "sdk", "binding"],
+    "mobile": ["mobile", "ios", "android", "react-native", "flutter", "swift", "kotlin", "xamarin"],
+}
+
+
+def _score_text_for_category(text: str) -> Tuple[str, int]:
+    """Return (best_category, score) for a blob of text."""
+    text_lower = text.lower()
+    best_cat = "other"
+    best_score = 0
+    for cat, keywords in _CATEGORY_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in text_lower)
+        if score > best_score:
+            best_score = score
+            best_cat = cat
+    return best_cat, best_score
+
+
+async def _stealth_fetch_github_meta(owner: str, repo: str) -> Optional[Dict[str, str]]:
+    """
+    Silently fetch the public GitHub repository page and extract:
+    description, topics, primary language — no headless browser required.
+    Returns a dict with keys: description, topics (str), language, or None on failure.
+    """
+    try:
+        import httpx
+        url = f"https://github.com/{owner}/{repo}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+        }
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code != 200:
+                return None
+            html = response.text
+    except Exception:
+        return None
+
+    meta: Dict[str, str] = {}
+
+    # Description — og:description or <p class="f4 my-3">
+    og_match = re.search(r'<meta\s+property="og:description"\s+content="([^"]*)"', html)
+    if og_match:
+        meta["description"] = og_match.group(1).strip()
+
+    # Primary language
+    lang_match = re.search(
+        r'itemprop="programmingLanguage"[^>]*>([^<]+)<', html
+    ) or re.search(r'<span[^>]*class="[^"]*color-fg-default[^"]*"[^>]*>([^<]+)</span>\s*<span[^>]*>\d+\.\d+%', html)
+    if lang_match:
+        meta["language"] = lang_match.group(1).strip()
+
+    # Topics (badge links: /topics/xxx)
+    topics = re.findall(r'/topics/([a-z0-9\-]+)', html)
+    if topics:
+        meta["topics"] = " ".join(dict.fromkeys(topics))  # deduplicate, preserve order
+
+    return meta if meta else None
+
+
+async def smart_categorize(
+    url: str,
+    title: str = "",
+    *,
+    github_token: Optional[str] = None,
+    existing_category: Optional[str] = None,
+    language: Optional[str] = None,
+    topics: Optional[List[str]] = None,
+    description: Optional[str] = None,
+) -> Tuple[str, str]:
+    """
+    Determine the best category for a repository using a three-level fallback chain.
+
+    1. If `topics` / `language` / `description` are already available (from GitHub API),
+       score them directly — no extra network call needed.
+    2. If not, attempt a stealth HTML fetch of the public GitHub page.
+    3. Fall back to URL/title pattern heuristics.
+
+    Returns (category, method) where method is one of:
+        "api_metadata" | "stealth_fetch" | "url_heuristics"
+    """
+    # --- Level 1: use already-fetched API metadata if rich enough ---
+    if topics or language or description:
+        combined = " ".join(filter(None, [
+            " ".join(topics or []),
+            language or "",
+            description or "",
+            title,
+        ]))
+        cat, score = _score_text_for_category(combined)
+        if score > 0:
+            return cat, "api_metadata"
+        # fall through if score == 0
+
+    # --- Level 2: stealth fetch ---
+    parsed_url = urlparse(url)
+    parts = [p for p in parsed_url.path.split("/") if p]
+    if len(parts) >= 2:
+        owner, repo_name = parts[0], parts[1]
+        meta = await _stealth_fetch_github_meta(owner, repo_name)
+        if meta:
+            combined = " ".join(filter(None, [
+                meta.get("topics", ""),
+                meta.get("language", ""),
+                meta.get("description", ""),
+                title,
+            ]))
+            cat, score = _score_text_for_category(combined)
+            if score > 0:
+                return cat, "stealth_fetch"
+
+    # --- Level 3: URL / title heuristics ---
+    heuristic_cat = categorize_url(url, title)
+    return heuristic_cat, "url_heuristics"
+

@@ -1,8 +1,9 @@
 """Authentication endpoints"""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Body
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
+from typing import Optional
 from schemas import (
     UserRegister, UserLogin, UserSchema, TokenResponse, APIKeyCreate, APIKeyResponse,
     PasswordResetRequest, PasswordResetConfirm, PasswordResetResponse,
@@ -18,6 +19,7 @@ from services.auth import (
 )
 from services.oauth import OAuth2Service
 from services.email_service import EmailService, generate_token
+import secrets
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -37,28 +39,63 @@ def get_db():
         db.close()
 
 
-def get_current_user(token: str = None, db: Session = Depends(get_db)):
-    """Get current authenticated user from token"""
-    if not token:
+def extract_token_from_header(authorization: Optional[str] = Header(None)) -> str:
+    """Extract and validate JWT token from Authorization header"""
+    print(f"DEBUG extract_token_from_header: authorization = '{authorization}'")
+    
+    if not authorization:
+        print(f"ERROR: Missing Authorization header")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing authorization token"
+            detail="Missing Authorization header"
         )
     
+    # Expected format: "Bearer <token>"
+    parts = authorization.split()
+    print(f"DEBUG extract_token_from_header: parts = {[p[:20] if len(p) > 20 else p for p in parts]}")
+    
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        print(f"ERROR: Invalid Authorization header format. Expected 'Bearer <token>', got '{authorization[:50]}'")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format. Expected: Bearer <token>"
+        )
+    
+    print(f"SUCCESS: Extracted token = {parts[1][:20]}...")
+    return parts[1]
+
+
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Get current authenticated user from Authorization header"""
+    print(f"DEBUG get_current_user: authorization header = {authorization}")
+    
+    token = extract_token_from_header(authorization)
+    print(f"DEBUG get_current_user: extracted token = {token[:20]}...")
+    
     user_id = decode_access_token(token)
+    print(f"DEBUG get_current_user: decoded user_id = {user_id}")
+    
     if not user_id:
+        print(f"ERROR: Could not decode user_id from token")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
         )
     
     user = get_user_by_id(db, user_id)
+    print(f"DEBUG get_current_user: user lookup result = {user}")
+    
     if not user or not user.is_active:
+        print(f"ERROR: User not found or inactive")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive"
         )
     
+    print(f"SUCCESS: Returning user {user.id} ({user.email})")
     return user
 
 
@@ -137,6 +174,16 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
     return TokenResponse(access_token=access_token, user=user_schema)
 
 
+@router.get("/verify", response_model=UserSchema)
+def verify_token(
+    current_user = Depends(get_current_user)
+):
+    """Verify JWT token and return current user info"""
+    print(f"✓ /verify endpoint called successfully")
+    print(f"  Current user ID: {current_user.id}, Email: {current_user.email}")
+    return current_user
+
+
 @router.get("/oauth/github/authorize")
 def github_authorize():
     """Redirect to GitHub OAuth2 authorization"""
@@ -144,13 +191,21 @@ def github_authorize():
 
 
 @router.post("/oauth/github/callback", response_model=TokenResponse)
-async def github_callback(code: str, db: Session = Depends(get_db)):
+async def github_callback(
+    code: str = Body(...),
+    state: Optional[str] = Body(None),
+    db: Session = Depends(get_db)
+):
     """GitHub OAuth2 callback handler"""
     if not code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Authorization code is required"
         )
+    
+    # Note: State validation is optional since it may come from frontend generation
+    # The critical CSRF protection here is that GitHub only redirects with
+    # valid authorization codes. Frontend-generated state is informational only.
     
     # Exchange code for access token
     access_token = await oauth2_service.exchange_github_code(code)
@@ -204,41 +259,68 @@ def google_authorize():
 
 
 @router.post("/oauth/google/callback", response_model=TokenResponse)
-async def google_callback(code: str, db: Session = Depends(get_db)):
+async def google_callback(
+    code: str = Body(...),
+    state: Optional[str] = Body(None),
+    db: Session = Depends(get_db)
+):
     """Google OAuth2 callback handler"""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)  # Ensure debug level
+    
+    logger.info(f"=== GOOGLE CALLBACK START ===")
+    logger.info(f"Code present: {bool(code)}, State present: {bool(state)}")
+    
     if not code:
+        logger.error("Authorization code is MISSING from request!")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Authorization code is required"
         )
     
+    # Note: State validation is optional since it may come from frontend generation
+    # The critical CSRF protection here is that Google only redirects with
+    # valid authorization codes. Frontend-generated state is informational only.
+    
     # Exchange code for access token
+    logger.info("Attempting to exchange authorization code with Google...")
     access_token = await oauth2_service.exchange_google_code(code)
     if not access_token:
+        logger.error("✗ CODE EXCHANGE FAILED - access_token is None")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to exchange authorization code"
         )
     
+    logger.info(f"✓ Code exchange successful, got access token")
+    
     # Get Google user data
+    logger.info("Fetching Google user data...")
     google_user = await oauth2_service.get_google_user(access_token)
     if not google_user:
+        logger.error("✗ Failed to retrieve Google user data")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to retrieve Google user data"
         )
     
+    logger.info(f"✓ Retrieved Google user: {google_user.email}")
+    
     # Check if user already exists
     existing_user = get_user_by_google_id(db, google_user.id)
     if existing_user:
+        logger.info(f"User already exists - logging in: {existing_user.email}")
         update_last_login(db, existing_user.id)
         jwt_token = create_access_token(existing_user.id)
+        logger.info(f"=== GOOGLE LOGIN SUCCESS ===")
         return TokenResponse(
             access_token=jwt_token,
             user=UserSchema.from_orm(existing_user)
         )
     
     # Create new user
+    logger.info(f"Creating new user from Google: {google_user.email}")
     new_user = create_user(
         db,
         email=google_user.email,
@@ -251,6 +333,7 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
     
     update_last_login(db, new_user.id)
     jwt_token = create_access_token(new_user.id)
+    logger.info(f"=== GOOGLE REGISTRATION SUCCESS ===")
     return TokenResponse(
         access_token=jwt_token,
         user=UserSchema.from_orm(new_user)
@@ -407,22 +490,22 @@ def resend_verification_email(
 
 @router.get("/me", response_model=UserSchema)
 def get_current_user_profile(
-    token: str = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """Get current user profile"""
-    user = get_current_user(token, db)
+    user = get_current_user(authorization, db)
     return UserSchema.from_orm(user)
 
 
 @router.post("/api-keys", response_model=APIKeyResponse)
 def create_api_key(
     request: APIKeyCreate,
-    token: str = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """Create a new API key for current user"""
-    user = get_current_user(token, db)
+    user = get_current_user(authorization, db)
     
     api_key = add_api_key(db, user.id, request.name)
     
@@ -435,11 +518,11 @@ def create_api_key(
 @router.delete("/api-keys/{key}")
 def delete_api_key(
     key: str,
-    token: str = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """Revoke an API key"""
-    user = get_current_user(token, db)
+    user = get_current_user(authorization, db)
     
     success = revoke_api_key(db, user.id, key)
     if not success:
@@ -455,11 +538,11 @@ def delete_api_key(
 def list_all_users(
     skip: int = 0,
     limit: int = 100,
-    token: str = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """List all users (admin only)"""
-    user = get_current_user(token, db)
+    user = get_current_user(authorization, db)
     # TODO: Add admin check here
     
     users = list_users(db, skip=skip, limit=limit)

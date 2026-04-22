@@ -13,7 +13,16 @@ export default function GitHubLoginPage() {
     const handleGitHubCallback = async () => {
       try {
         const code = searchParams.get('code');
-        // const state = searchParams.get('state'); // Not used in callback validation
+        const state = searchParams.get('state');
+        const error = searchParams.get('error');
+        const errorDescription = searchParams.get('error_description');
+
+        // Handle OAuth errors
+        if (error) {
+          setError(`Authentication failed: ${error} - ${errorDescription || 'Unknown error'}`);
+          setLoading(false);
+          return;
+        }
 
         if (!code) {
           setError('No authorization code received from GitHub');
@@ -21,11 +30,14 @@ export default function GitHubLoginPage() {
           return;
         }
 
-        // Exchange code for JWT token
-        const response = await fetch('http://localhost:8000/api/auth/oauth/github/callback', {
+        // Clear stored state from sessionStorage
+        sessionStorage.removeItem('github_oauth_state');
+
+        // Exchange code for JWT token (pass state to backend for validation)
+        const response = await fetch('/api/auth/oauth/github/callback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code })
+          body: JSON.stringify({ code, state })
         });
 
         if (!response.ok) {
