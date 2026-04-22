@@ -227,6 +227,7 @@ async def sync_repository_metadata(
             category, category_source = await smart_categorize(
                 repo.url,
                 repo.title or repo.name or "",
+                github_token=github_token,
             )
             # Repository might not exist on GitHub
             error_msg = f"Repository metadata not found: {repo.url}"

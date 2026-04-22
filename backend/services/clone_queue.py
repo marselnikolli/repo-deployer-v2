@@ -75,6 +75,7 @@ class CloneQueueService:
         self.executor: Optional[ThreadPoolExecutor] = None
         self.on_job_update: Optional[Callable[[CloneJob], None]] = None
         self.db_session_factory: Optional[Callable] = None
+        self.zip_queue: Optional[object] = None  # Reference to ZipQueue (set later to avoid circular imports)
         self._initialized = True
 
     def start(self):
@@ -96,6 +97,10 @@ class CloneQueueService:
             self.worker_thread.join(timeout=5)
         if self.executor:
             self.executor.shutdown(wait=False)
+
+    def set_zip_queue(self, zip_queue):
+        """Set reference to ZipQueue service (avoids circular imports)"""
+        self.zip_queue = zip_queue
 
     def add_job(self, repository_id: int, name: str, url: str, target_path: str) -> CloneJob:
         """Add a new clone job to the queue"""
@@ -184,6 +189,24 @@ class CloneQueueService:
         except Exception as e:
             logger.error(f"Error updating repository cloned status: {e}", exc_info=True)
 
+    def _enqueue_zip_for_repo(self, repository_id: int, repository_url: str, repository_name: str):
+        """Automatically enqueue a ZIP job for a successfully cloned repository"""
+        if not self.zip_queue:
+            logger.debug(f"ZIP queue not configured, skipping ZIP enqueue for repo {repository_id}")
+            return
+
+        try:
+            repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+            zip_path = os.path.join(repos_dir, f"{repository_name.replace('/', '_')}.zip")
+            
+            # Enqueue the ZIP job
+            if self.zip_queue.enqueue(repository_id, repository_url, zip_path):
+                logger.info(f"Automatically enqueued ZIP job for repo {repository_id} after clone completion")
+            else:
+                logger.debug(f"ZIP job not enqueued for repo {repository_id} (may already be queued or completed)")
+        except Exception as e:
+            logger.error(f"Error enqueueing ZIP job for repo {repository_id}: {e}", exc_info=True)
+
     def _process_job(self, job: CloneJob):
         """Process a single clone job in a thread pool worker"""
         from services.git_service import clone_repo
@@ -202,6 +225,9 @@ class CloneQueueService:
                 job.progress = 100
                 logger.info(f"Clone completed for job {job.id}: {job.repository_name}")
                 self._update_repository_cloned_status(job.repository_id, job.target_path)
+                
+                # Automatically enqueue ZIP job after successful clone
+                self._enqueue_zip_for_repo(job.repository_id, job.repository_url, job.repository_name)
             else:
                 job.status = CloneStatus.FAILED
                 job.error_message = "Clone operation failed"

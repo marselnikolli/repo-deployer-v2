@@ -31,8 +31,18 @@ A powerful, self-hosted platform for managing, cloning, and deploying GitHub rep
 
 ### Clone & Deploy
 - **Batch Cloning** - Clone multiple repositories simultaneously (up to 3 concurrent)
+- **Clone to ZIP** - Automatically create ZIP archives of cloned repositories (main/master branch)
+- **Background Sync** - ZIP creation runs asynchronously without blocking the UI
+- **ZIP Status Tracking** - Per-repository ZIP status (pending/in_progress/done/failed)
 - **Progress Tracking** - Real-time clone progress with status updates
 - **Docker Deployment** - Deploy cloned repositories to Docker containers
+
+### Browser Extension
+- **Chrome & Firefox** - One-click import of GitHub repository URLs directly from your browser
+- **Repository Detection** - Detects GitHub URLs and allows manual entry as fallback
+- **Instant Sync** - Sends repositories directly to the app via local API
+- **UI Feedback** - Real-time confirmation and status updates during import
+- **Cross-Browser** - Works seamlessly across Chrome, Firefox, and Edge
 
 ### User Experience
 - **Keyboard Shortcuts** - Vim-style navigation (j/k), quick search (/), and more
@@ -115,6 +125,14 @@ docker-compose up --build
 | POST | `/api/clone-queue/cancel/{id}` | Cancel pending job |
 | POST | `/api/clone-queue/clear` | Clear completed jobs |
 
+### ZIP Archive
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/repositories/{id}/zip` | Enqueue ZIP archive job |
+| GET | `/api/repositories/{id}/zip/status` | Get ZIP status |
+| GET | `/api/zip/statuses` | Get ZIP statuses for all repos |
+| POST | `/api/zip/sync` | Trigger ZIP sync for all unarchived repos |
+
 ### Tags
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -150,6 +168,15 @@ docker-compose up --build
 | POST | `/api/bulk/health-check` | Check health of all repositories with progress tracking |
 | GET | `/api/bulk/health-check/{job_id}/progress` | Get real-time health check progress |
 
+### Sync Progress
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/import/sync-progress` | Get current metadata sync progress |
+| POST | `/api/import/sync-progress/reset` | Reset metadata sync progress |
+| POST | `/api/import/sync/pause` | Pause the sync process |
+| POST | `/api/import/sync/resume` | Resume the sync process |
+| POST | `/api/import/sync/stop` | Stop the sync process |
+
 ## Keyboard Shortcuts
 
 | Key | Action |
@@ -178,11 +205,14 @@ repo-deployer-v2/
 │   │   ├── repository.py       # Repository CRUD
 │   │   └── tags.py             # Tags CRUD
 │   ├── services/
-│   │   ├── bookmark_parser.py  # HTML bookmark parsing
-│   │   ├── git_service.py      # Git clone/sync operations
+│   │   ├── bookmark_parser.py  # HTML bookmark parsing & categorization
+│   │   ├── git_service.py      # Git clone/sync & ZIP operations
 │   │   ├── github_service.py   # GitHub API integration
-│   │   ├── clone_queue.py      # Batch clone queue
+│   │   ├── clone_queue.py      # Batch clone queue with ZIP auto-enqueue
+│   │   ├── zip_queue.py        # Async ZIP archive background queue
+│   │   ├── git_bookmark_sync.py# GitHub bookmark synchronization
 │   │   ├── export_service.py   # CSV/JSON/Markdown export
+│   │   ├── import_sync_service.py # Metadata sync with stealth fetch
 │   │   └── search_service.py   # Full-text search & analytics
 │   ├── requirements.txt
 │   └── Dockerfile
@@ -195,6 +225,12 @@ repo-deployer-v2/
 │   │   └── pages/              # Page components
 │   ├── package.json
 │   └── Dockerfile
+├── browser-extension/          # Chrome & Firefox extension
+│   ├── manifest.json
+│   ├── popup.html
+│   ├── popup.js
+│   ├── icons/
+│   └── styles/
 ├── docs/                       # Documentation
 │   ├── FEATURES.md
 │   ├── FEATURES_ROADMAP.md
@@ -272,6 +308,99 @@ EMAIL_FROM_NAME=Repo Deployer
 
 The application automatically loads from `.env` via Docker Compose `env_file` directive.
 
+## Browser Extension Setup
+
+### Installation
+
+#### Chrome
+1. Go to `chrome://extensions/`
+2. Enable "Developer mode" (top right)
+3. Click "Load unpacked"
+4. Select the `browser-extension` folder from this repository
+5. The extension icon will appear in your toolbar
+
+#### Firefox
+1. Go to `about:debugging#/runtime/this-firefox`
+2. Click "Load Temporary Add-on"
+3. Select any file from the `browser-extension` folder
+4. The extension icon will appear in your toolbar
+
+### Usage
+1. Navigate to any GitHub repository
+2. Click the extension icon to automatically detect the URL
+3. Or manually paste a GitHub URL
+4. Click "Import to Repo Deployer"
+5. Repository is instantly added to your collection
+
+### Features
+- **Auto-Detection** - Automatically detects GitHub repository URLs on the current page
+- **Manual Entry** - Fall back to manual URL entry if auto-detection doesn't work
+- **Real-time Feedback** - Instant confirmation when repository is imported
+- **No Permissions** - Works without special permissions (uses public GitHub URLs)
+- **Cross-Browser** - Compatible with Chrome, Firefox, and Edge
+
+## Clone & Archive System
+
+### Clone to ZIP
+When you clone a repository, the system automatically creates a ZIP archive of the main branch (falling back to master if main doesn't exist). This happens entirely in the background without blocking the UI.
+
+**Key Features:**
+- **Automatic** - ZIP archives are created automatically after successful clone
+- **Async Processing** - Uses background queue to avoid UI blocking
+- **Status Tracking** - Real-time per-repository ZIP status:
+  - `pending` - Job queued, waiting to process
+  - `in_progress` - Currently creating archive
+  - `done` - Archive successfully created
+  - `failed` - Archive creation failed
+- **Non-Blocking** - All operations run asynchronously
+- **Progress Tracking** - Monitor ZIP creation in the UI
+
+### How It Works
+1. **Clone Starts** - User initiates repository clone via clone queue
+2. **Clone Completes** - On successful clone, repository is updated in database
+3. **ZIP Enqueued** - A ZIP job is automatically added to the background queue
+4. **ZIP Processing** - Background async worker processes the job (no UI impact)
+5. **Status Updated** - Database and UI updated with final ZIP status
+6. **Ready for Download** - ZIP file stored at `repos/{repo_name}.zip`
+
+### Using ZIP Archives
+```bash
+# Check ZIP status
+curl http://localhost:8001/api/repositories/{id}/zip/status
+
+# Get all ZIP statuses
+curl http://localhost:8001/api/zip/statuses
+
+# Manually trigger ZIP for all unarchived repos
+curl -X POST http://localhost:8001/api/zip/sync
+```
+
+## Metadata Synchronization
+
+### Smart Categorization
+The system uses an intelligent fallback chain to categorize repositories:
+
+1. **GitHub API Topics** (if token configured) - Most reliable source
+2. **Repository Description** - Keyword matching from repo description
+3. **Language Detection** - Primary language from GitHub
+4. **URL Pattern Heuristics** - Infer from repository name/path
+5. **Manual Override** - User can always set custom categories
+
+### Sync Progress
+Monitor sync progress in real-time:
+- Current repository being processed
+- Progress percentage and count
+- Elapsed and estimated remaining time
+- Error tracking with pause/resume capabilities
+- Support for pause/resume/stop operations
+
+### Stealth Fetch (No API Key)
+If no GitHub API token is configured, the system falls back to:
+- Public page fetching (no bot detection evasion)
+- HTML parsing for topics and metadata
+- Language detection from repository data
+- Graceful degradation without errors
+
 ## GitHub Profile & Bookmarks Setup
 
 ### Connect Your GitHub Account
@@ -289,7 +418,6 @@ The application automatically loads from `.env` via Docker Compose `env_file` di
 - **Smart Merging**: When syncing, the app intelligently merges local and remote bookmarks without creating duplicates
 - **Manual Sync**: Click "Sync Now" to trigger an immediate sync
 - **Secure Storage**: Your GitHub tokens are encrypted and stored securely
-
 ### Bookmark Data Format
 Bookmarks are stored in a JSON file in your GitHub "git-bookmark" repository:
 ```json
@@ -361,12 +489,19 @@ Detailed documentation is available in the `docs/` folder:
 - [HEALTH_CHECK_IMPLEMENTATION.md](docs/HEALTH_CHECK_IMPLEMENTATION.md) - Health check details
 - [OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md) - Performance optimization plan
 
+### Recently Implemented Features (v2.1)
+- ✅ **Browser Extension** - Chrome & Firefox support for one-click repository import
+- ✅ **Clone to ZIP** - Automatic ZIP archive creation after clone (async, non-blocking)
+- ✅ **Smart Categorization** - Intelligent multi-level fallback chain for category assignment
+- ✅ **Progress Bar UI Fix** - Real-time visual feedback for sync operations
+- ✅ **Sync Footer Behavior** - Context-aware status display for API key configuration
+
 ## License
 
 MIT License - see LICENSE file for details.
 
 ---
 
-**Version:** 2.3.0  
-**Last Updated:** February 27, 2026  
-**Features:** Repository management, GitHub & Google OAuth, bookmarks sync, bulk health checks, GitHub API rate limiting, Docker deployment
+**Version:** 2.4.0  
+**Last Updated:** April 22, 2026  
+**Features:** Repository management, GitHub & Google OAuth, bookmarks sync, clone-to-ZIP archives, browser extension, smart categorization, bulk health checks, GitHub API rate limiting, Docker deployment, stealth metadata sync

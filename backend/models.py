@@ -53,7 +53,7 @@ class Repository(Base):
     title = Column(String(2048))
     description = Column(String(4096), nullable=True)
     category = Column(String(50), default=CategoryEnum.OTHER, index=True)
-    category_source = Column(String(20), nullable=True)  # api_metadata | stealth_fetch | url_heuristics
+    category_source = Column(String(20), nullable=True)  # api_token | api_metadata | stealth_fetch | url_heuristics
     path = Column(String(512), nullable=True)
 
     # Status

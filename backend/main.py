@@ -28,6 +28,11 @@ from crud import repository as repo_crud
 from routes import auth, docker, deployment, analytics, notifications, search, import_routes, collection_routes, github_bookmarks
 from services.bookmark_scheduler import bookmark_scheduler
 
+
+# Simple Pydantic models for request bodies
+class ImportUrlRequest(BaseModel):
+    url: str
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,6 +97,7 @@ async def lifespan(app: FastAPI):
     
     # Start clone queue worker
     clone_queue.db_session_factory = SessionLocal
+    clone_queue.set_zip_queue(zip_queue)  # Enable automatic ZIP enqueueing on clone completion
     clone_queue.start()
 
     # Start ZIP archive queue worker
@@ -644,6 +650,71 @@ async def create_repository(
     
     # Create the repository
     new_repo = repo_crud.create_repository(db, repo_data)
+    return new_repo
+
+
+@app.post("/api/repositories/import-url", response_model=RepositorySchema)
+async def import_repository_url(
+    body: ImportUrlRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Browser extension endpoint: import a single GitHub repository URL.
+    Used by the Repo Deployer browser extension for one-click imports.
+    
+    Request body: { "url": "https://github.com/owner/repo" }
+    """
+    url = body.url.strip()
+    
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    
+    # Normalize the URL
+    from services.bookmark_parser import normalize_github_url
+    normalized_url = normalize_github_url(url)
+    
+    if not normalized_url:
+        raise HTTPException(status_code=400, detail="Invalid GitHub URL format")
+    
+    # Check if already exists
+    existing = repo_crud.get_repo_by_url(db, normalized_url)
+    if existing:
+        raise HTTPException(status_code=409, detail="Repository already in your library")
+    
+    # Extract owner/repo from URL for initial metadata
+    import re
+    match = re.search(r"github\.com/([^/]+)/([^/]+)", normalized_url)
+    if not match:
+        raise HTTPException(status_code=400, detail="Could not parse GitHub URL")
+    
+    owner, repo_name = match.groups()
+    
+    # Create repository with minimal data
+    repo_data = RepositoryCreate(
+        url=normalized_url,
+        name=repo_name,
+        title=f"{owner}/{repo_name}",
+        category="other",
+        description=None
+    )
+    
+    new_repo = repo_crud.create_repository(db, repo_data)
+    
+    # Trigger metadata sync in background (non-blocking)
+    import asyncio
+    try:
+        from services.import_sync_service import sync_repository_metadata
+        asyncio.create_task(sync_repository_metadata(
+            repo=new_repo,
+            db=db,
+            github_token=os.getenv("GITHUB_TOKEN")
+        ))
+    except Exception as e:
+        print(f"[IMPORT-URL] Could not trigger background sync: {e}")
+    
     return new_repo
 
 

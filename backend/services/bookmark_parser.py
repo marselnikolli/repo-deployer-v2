@@ -256,6 +256,48 @@ async def _stealth_fetch_github_meta(owner: str, repo: str) -> Optional[Dict[str
     return meta if meta else None
 
 
+async def _fetch_github_api_meta(url: str, github_token: str) -> Optional[Dict[str, any]]:
+    """
+    Fetch repository metadata from GitHub API using a personal token.
+    Returns a dict with keys: description, topics, language, or None on failure.
+    """
+    try:
+        import httpx
+        import re
+        
+        # Parse owner/repo from URL
+        pattern = r"github\.com/([^/]+)/([^/]+?)(?:\.git|/.*)?$"
+        match = re.search(pattern, url)
+        if not match:
+            return None
+        
+        owner, repo = match.groups()
+        repo = repo.rstrip('.git')
+        
+        api_url = f"https://api.github.com/repos/{owner}/{repo}"
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "RepoDeployer/2.0"
+        }
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(api_url, headers=headers)
+            if response.status_code != 200:
+                return None
+            
+            data = response.json()
+            
+        meta: Dict[str, any] = {
+            "description": data.get("description", ""),
+            "topics": data.get("topics", []),
+            "language": data.get("language", ""),
+        }
+        return meta if any(meta.values()) else None
+    except Exception:
+        return None
+
+
 async def smart_categorize(
     url: str,
     title: str = "",
@@ -267,16 +309,31 @@ async def smart_categorize(
     description: Optional[str] = None,
 ) -> Tuple[str, str]:
     """
-    Determine the best category for a repository using a three-level fallback chain.
+    Determine the best category for a repository using a four-level fallback chain.
 
-    1. If `topics` / `language` / `description` are already available (from GitHub API),
+    1. If github_token is provided: fetch metadata from GitHub API
+    2. If `topics` / `language` / `description` are already available (from GitHub API),
        score them directly — no extra network call needed.
-    2. If not, attempt a stealth HTML fetch of the public GitHub page.
-    3. Fall back to URL/title pattern heuristics.
+    3. Attempt a stealth HTML fetch of the public GitHub page (no auth required)
+    4. Fall back to URL/title pattern heuristics.
 
     Returns (category, method) where method is one of:
-        "api_metadata" | "stealth_fetch" | "url_heuristics"
+        "api_token" | "api_metadata" | "stealth_fetch" | "url_heuristics"
     """
+    # --- Level 0: GitHub API with user-provided token ---
+    if github_token:
+        api_meta = await _fetch_github_api_meta(url, github_token)
+        if api_meta:
+            combined = " ".join(filter(None, [
+                " ".join(api_meta.get("topics", [])) if isinstance(api_meta.get("topics"), list) else api_meta.get("topics", ""),
+                api_meta.get("language", ""),
+                api_meta.get("description", ""),
+                title,
+            ]))
+            cat, score = _score_text_for_category(combined)
+            if score > 0:
+                return cat, "api_token"
+
     # --- Level 1: use already-fetched API metadata if rich enough ---
     if topics or language or description:
         combined = " ".join(filter(None, [

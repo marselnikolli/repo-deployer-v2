@@ -217,17 +217,19 @@ export function ImportProgressBar() {
           <div className="w-full bg-[var(--color-bg-tertiary)] rounded-[var(--radius-sm)] h-2 overflow-hidden">
             <div
               className={cx(
-                'h-2 transition-all duration-300',
+                'h-2 transition-all duration-300 ease-out',
                 progress.is_paused
                   ? progress.pause_reason?.toLowerCase().includes("rate limit")
                     ? 'bg-yellow-500'
                     : 'bg-red-500'
                   : hasErrors 
                     ? 'bg-orange-500' 
-                    : 'bg-[var(--color-brand-500)]'
+                    : 'bg-[var(--color-brand-500)]',
+                'will-change-[width]'
               )}
               style={{
-                width: `${progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0}%`,
+                width: `${Math.min(100, Math.max(0, progress.percentage || 0))}%`,
+                transition: 'width 300ms ease-out'
               }}
             />
           </div>
