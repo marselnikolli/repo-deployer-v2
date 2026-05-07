@@ -7,12 +7,19 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html, body {
+      height: 100%;
+      overflow-y: auto;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      width: 340px;
+      min-width: 280px;
       background: #0d1117;
       color: #e6edf3;
       font-size: 13px;
+      display: flex;
+      flex-direction: column;
     }
 
     header {
@@ -22,6 +29,9 @@
       padding: 12px 14px;
       background: #161b22;
       border-bottom: 1px solid #30363d;
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
 
     header svg { color: #2E90FA; flex-shrink: 0; }
@@ -42,7 +52,20 @@
       border-radius: 99px;
     }
 
-    section { padding: 14px; }
+    main {
+      flex: 1;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
 
     .label {
       font-size: 11px;
@@ -50,35 +73,86 @@
       color: #8b949e;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin-bottom: 6px;
     }
 
-    .url-box {
+    .url-count {
+      font-size: 10px;
+      color: #3fb950;
+      font-weight: 600;
+    }
+
+    /* ── Detected URL list ──────────────────────────────────────────────────── */
+
+    #detected-urls-list {
+      margin-bottom: 8px;
+    }
+
+    .url-empty {
+      color: #8b949e;
+      font-style: italic;
+      font-size: 12px;
+      padding: 10px 12px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      text-align: center;
+    }
+
+    .url-list-item {
       display: flex;
       align-items: center;
       gap: 6px;
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 6px;
-      padding: 8px 10px;
-      margin-bottom: 12px;
-      min-height: 38px;
+      padding: 6px 8px;
+      margin-bottom: 4px;
     }
 
-    .url-box span {
+    .url-list-item:last-child { margin-bottom: 0; }
+
+    .url-list-item .url-text {
       flex: 1;
       word-break: break-all;
       color: #79c0ff;
       font-family: 'SFMono-Regular', Consolas, monospace;
-      font-size: 12px;
+      font-size: 11px;
+      min-width: 0;
     }
 
-    .url-box .not-github {
-      color: #8b949e;
-      font-family: inherit;
-      font-size: 12px;
-      font-style: italic;
+    .btn-item-import {
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background 0.15s, opacity 0.15s;
     }
+
+    .btn-item-import:hover { background: #2ea043; }
+    .btn-item-import:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-item-remove {
+      background: transparent;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 11px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.15s, color 0.15s;
+      line-height: 1;
+    }
+
+    .btn-item-remove:hover { background: #2d1215; color: #f85149; border-color: #6e2c31; }
+
+    /* ── Shared button styles ───────────────────────────────────────────────── */
 
     .manual-row {
       display: flex;
@@ -96,6 +170,7 @@
       font-size: 12px;
       outline: none;
       transition: border-color 0.15s;
+      min-width: 0;
     }
 
     .manual-row input::placeholder { color: #484f58; }
@@ -115,6 +190,7 @@
       background: #1f6feb;
       color: #fff;
       padding: 8px 14px;
+      white-space: nowrap;
     }
 
     .btn-primary:hover { background: #388bfd; }
@@ -142,6 +218,7 @@
     }
 
     .btn-secondary:hover { background: #161b22; color: #e6edf3; }
+    .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .status {
       display: flex;
@@ -172,6 +249,7 @@
       color: #e6edf3;
       font-size: 12px;
       outline: none;
+      min-width: 0;
     }
 
     .settings-row input:focus { border-color: #1f6feb; }
@@ -187,7 +265,7 @@
     .divider {
       border: none;
       border-top: 1px solid #21262d;
-      margin: 10px 0;
+      margin: 12px 0;
     }
 
     .spinner {
@@ -201,6 +279,86 @@
     }
 
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Bookmark import ───────────────────────────────────────────────────── */
+
+    .bm-found-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 7px 10px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .bm-found-row .bm-count-num {
+      color: #3fb950;
+      font-weight: 700;
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .progress-wrap { margin-bottom: 8px; }
+
+    .progress-track {
+      width: 100%;
+      height: 4px;
+      background: #21262d;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: #238636;
+      border-radius: 99px;
+      transition: width 0.2s ease;
+      width: 0%;
+    }
+
+    .progress-label {
+      font-size: 10px;
+      color: #8b949e;
+      margin-top: 4px;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .result-row {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .result-chip {
+      flex: 1;
+      text-align: center;
+      padding: 5px 4px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .result-chip .num { font-size: 15px; display: block; }
+    .result-chip.ok  { background: #0d2b1a; color: #3fb950; border: 1px solid #238636; }
+    .result-chip.dup { background: #0d1f3b; color: #79c0ff; border: 1px solid #1f6feb; }
+    .result-chip.err { background: #2d1215; color: #f85149; border: 1px solid #6e2c31; }
+
+    .backup-note {
+      font-size: 10px;
+      color: #484f58;
+      text-align: center;
+      margin-bottom: 6px;
+      word-break: break-all;
+      padding: 0 4px;
+    }
   </style>
 </head>
 <body>
@@ -210,28 +368,34 @@
       <path d="M9 18c-4.51 2-5-2-7-2"/>
     </svg>
     <h1>Repo Deployer</h1>
-    <span class="badge">Extension</span>
+    <span class="badge">Sidebar</span>
   </header>
 
-  <section>
-    <!-- Detected URL -->
-    <div class="label">Detected Repository</div>
-    <div class="url-box">
-      <span id="detected-url" class="not-github">No GitHub repo detected on this tab</span>
+  <main>
+    <!-- Detected URLs list -->
+    <div class="section-header">
+      <div class="label">Detected Repositories</div>
+      <span id="url-count" class="url-count"></span>
     </div>
 
-    <!-- Status message -->
+    <div id="detected-urls-list">
+      <div class="url-empty">No GitHub repo URL detected on this page</div>
+    </div>
+
+    <button id="btn-scan-page" class="btn-secondary" style="margin-bottom:8px">
+      🔍 Scan Page for Repo Links
+    </button>
+
     <div id="status" style="display:none"></div>
 
-    <!-- Import detected URL -->
-    <button id="btn-import" class="btn-import" disabled>
-      Import Detected Repository
+    <button id="btn-import-all" class="btn-import" disabled>
+      Import All Detected Repos
     </button>
 
     <hr class="divider" />
 
     <!-- Manual URL entry -->
-    <div class="label">Or Enter URL Manually</div>
+    <div class="label" style="margin-bottom:6px">Or Enter URL Manually</div>
     <div class="manual-row">
       <input id="manual-url" type="url" placeholder="https://github.com/owner/repo" />
       <button id="btn-manual" class="btn-primary">Import</button>
@@ -239,13 +403,61 @@
 
     <hr class="divider" />
 
+    <!-- Bookmark import -->
+    <div class="label" style="margin-bottom:6px">Browser Bookmarks Import</div>
+
+    <div id="bm-alert" style="display:none"></div>
+
+    <div id="bm-found-row" class="bm-found-row" style="display:none">
+      <span>GitHub repos found in bookmarks</span>
+      <span id="bm-count" class="bm-count-num">0</span>
+    </div>
+
+    <div id="bm-progress-wrap" class="progress-wrap" style="display:none">
+      <div class="progress-track">
+        <div id="bm-bar" class="progress-bar"></div>
+      </div>
+      <div id="bm-progress-label" class="progress-label">Preparing…</div>
+    </div>
+
+    <div id="bm-result-row" class="result-row" style="display:none">
+      <div class="result-chip ok">
+        <span id="bm-r-imported" class="num">0</span>
+        Imported
+      </div>
+      <div class="result-chip dup">
+        <span id="bm-r-skipped" class="num">0</span>
+        Already in lib
+      </div>
+      <div class="result-chip err">
+        <span id="bm-r-failed" class="num">0</span>
+        Failed
+      </div>
+    </div>
+
+    <div id="bm-backup-note" class="backup-note" style="display:none"></div>
+
+    <button id="btn-scan-bm" class="btn-secondary">
+      🔍 Scan Bookmarks for GitHub Repos
+    </button>
+
+    <button id="btn-import-bm" class="btn-import" style="display:none; margin-bottom:4px">
+      ⬆ Import All &amp; Remove from Bookmarks
+    </button>
+
+    <button id="btn-scan-again" class="btn-secondary" style="display:none">
+      ↩ Scan Again
+    </button>
+
+    <hr class="divider" />
+
     <!-- Settings -->
-    <div class="label">App URL</div>
+    <div class="label" style="margin-bottom:6px">App URL</div>
     <div class="settings-row">
       <input id="app-url" type="url" placeholder="http://localhost:3000" />
-      <button id="btn-save" class="btn-primary" style="white-space:nowrap">Save</button>
+      <button id="btn-save" class="btn-primary">Save</button>
     </div>
-  </section>
+  </main>
 
   <footer>Repo Deployer v1.0 · <a href="#" id="open-app" style="color:#1f6feb;text-decoration:none">Open App</a></footer>
 

@@ -29,9 +29,26 @@ from routes import auth, docker, deployment, analytics, notifications, search, i
 from services.bookmark_scheduler import bookmark_scheduler
 
 
+def _repo_zip_path(repos_dir: str, repo_name: str) -> str:
+    """Return {repos_dir}/{owner}/{name}/{name}.zip given 'owner/name' or 'name'."""
+    parts = repo_name.split('/', 1)
+    owner = parts[0] if len(parts) == 2 else "unknown"
+    name  = parts[1] if len(parts) == 2 else parts[0]
+    return os.path.join(repos_dir, owner, name, f"{name}.zip")
+
+
 # Simple Pydantic models for request bodies
 class ImportUrlRequest(BaseModel):
     url: str
+
+class BookmarkBackupPayload(BaseModel):
+    exported_at: str
+    source: str
+    total: int
+    bookmarks: list
+
+class BulkImportUrlsRequest(BaseModel):
+    urls: List[str]
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +144,15 @@ app = FastAPI(
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://localhost:8001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8001",
+    ],
+    allow_origin_regex=r"chrome-extension://.*|moz-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -194,9 +219,8 @@ async def import_single_url(
         raise HTTPException(status_code=500, detail=str(e))
 
     # Fire off background metadata sync + ZIP
-    github_token = os.getenv("GITHUB_TOKEN")
     repos_dir = os.getenv("REPOS_DIR", "/app/repos")
-    zip_path = os.path.join(repos_dir, f"{full_name.replace('/', '_')}.zip")
+    zip_path = _repo_zip_path(repos_dir, full_name)
     zip_queue.enqueue(new_repo.id, norm, zip_path)
 
     repo_id = new_repo.id
@@ -206,7 +230,7 @@ async def import_single_url(
         try:
             fresh = new_db.query(Repository).filter(Repository.id == repo_id).first()
             if fresh:
-                await sync_repositories_metadata([fresh], new_db, github_token)
+                await sync_repositories_metadata([fresh], new_db, github_token=None)
         except Exception as e:
             logger.error(f"[EXTENSION IMPORT] Sync error: {e}")
         finally:
@@ -215,6 +239,89 @@ async def import_single_url(
     background_tasks.add_task(sync_task)
 
     return {"id": new_repo.id, "name": full_name, "url": norm, "category": category}
+
+
+@app.post("/api/repositories/bulk-import-urls")
+async def bulk_import_urls(
+    payload: BulkImportUrlsRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Import a list of GitHub repository URLs in a single database operation.
+    Used by the browser extension bookmark importer.
+    Returns counts for imported / skipped (duplicate) / failed (invalid URL).
+    """
+    imported, skipped, failed = 0, 0, 0
+
+    # Normalise and deduplicate within the incoming batch
+    seen: set = set()
+    valid_urls: list = []
+    for raw in payload.urls:
+        norm = normalize_github_url(raw)
+        if norm and norm not in seen:
+            seen.add(norm)
+            valid_urls.append(norm)
+        elif not norm:
+            failed += 1
+
+    if not valid_urls:
+        return {"imported": imported, "skipped": skipped, "failed": failed, "total": len(payload.urls)}
+
+    # One query to find which URLs already exist
+    existing_urls: set = set(
+        row[0] for row in db.query(Repository.url).filter(Repository.url.in_(valid_urls)).all()
+    )
+
+    repos_to_add = []
+    for url in valid_urls:
+        if url in existing_urls:
+            skipped += 1
+            continue
+        url_parts = url.rstrip("/").split("/")
+        repo_name = url_parts[-1]
+        owner = url_parts[-2] if len(url_parts) >= 2 else "unknown"
+        full_name = f"{owner}/{repo_name}"
+        repos_to_add.append(Repository(
+            name=full_name,
+            url=url,
+            title=full_name,
+            category=categorize_url(url, full_name),
+        ))
+
+    if repos_to_add:
+        try:
+            db.add_all(repos_to_add)
+            db.commit()
+            for repo in repos_to_add:
+                db.refresh(repo)
+            imported = len(repos_to_add)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Bulk insert failed: {e}")
+
+        # Enqueue ZIP + trigger metadata sync in background
+        repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+        new_ids = [r.id for r in repos_to_add]
+
+        for repo in repos_to_add:
+            zip_path = _repo_zip_path(repos_dir, repo.name)
+            zip_queue.enqueue(repo.id, repo.url, zip_path)
+
+        async def sync_task():
+            new_db = SessionLocal()
+            try:
+                fresh = new_db.query(Repository).filter(Repository.id.in_(new_ids)).all()
+                if fresh:
+                    await sync_repositories_metadata(fresh, new_db, github_token=None, batch_size=10, delay_between_batches=2.0)
+            except Exception as e:
+                logger.error(f"[BULK-IMPORT] Sync error: {e}")
+            finally:
+                new_db.close()
+
+        background_tasks.add_task(sync_task)
+
+    return {"imported": imported, "skipped": skipped, "failed": failed, "total": len(payload.urls)}
 
 
 @app.post("/api/import/html/analyze", response_model=ImportResponse)
@@ -340,16 +447,15 @@ async def import_from_html(
         
         # Trigger background metadata sync for newly imported repositories
         if imported_repos:
-            github_token = os.getenv("GITHUB_TOKEN")
             repos_dir = os.getenv("REPOS_DIR", "/app/repos")
-            logger.info(f"Triggering background sync for {len(imported_repos)} repositories")
+            logger.info(f"Triggering background stealth sync for {len(imported_repos)} repositories")
             
             # Convert ORM objects to dicts to avoid detached instance errors
             repo_ids = [repo.id for repo in imported_repos]
 
             # Enqueue ZIP jobs in parallel with sync — non-blocking
             for repo in imported_repos:
-                zip_path = os.path.join(repos_dir, f"{repo.name.replace('/', '_')}.zip")
+                zip_path = _repo_zip_path(repos_dir, repo.name)
                 zip_queue.enqueue(repo.id, repo.url, zip_path)
             
             # Create a wrapper function that creates its own DB session for the background task
@@ -362,7 +468,7 @@ async def import_from_html(
                         await sync_repositories_metadata(
                             fresh_repos,
                             new_db,
-                            github_token,
+                            github_token=None,
                             batch_size=10,
                             delay_between_batches=2.0
                         )
@@ -413,7 +519,7 @@ async def enqueue_zip(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     repos_dir = os.getenv("REPOS_DIR", "/app/repos")
-    zip_path = os.path.join(repos_dir, f"{repo.name.replace('/', '_')}.zip")
+    zip_path = _repo_zip_path(repos_dir, repo.name)
 
     enqueued = zip_queue.enqueue(repo_id, repo.url, zip_path)
     status = zip_queue.get_status(repo_id) or {}
@@ -456,11 +562,40 @@ async def trigger_zip_sync(background_tasks: BackgroundTasks, db: Session = Depe
 
     enqueued_count = 0
     for repo in repos_without_zip:
-        zip_path = os.path.join(repos_dir, f"{repo.name.replace('/', '_')}.zip")
+        zip_path = _repo_zip_path(repos_dir, repo.name)
         if zip_queue.enqueue(repo.id, repo.url, zip_path):
             enqueued_count += 1
 
     return {"enqueued": enqueued_count, "total_without_zip": len(repos_without_zip)}
+
+
+@app.post("/api/bookmarks/save-backup")
+async def save_bookmark_backup(payload: BookmarkBackupPayload):
+    """
+    Write a GitHub bookmark backup JSON file directly to the host Desktop.
+    The Desktop directory must be mounted at DESKTOP_BACKUP_PATH (default /host_desktop).
+    Returns 503 if the mount is not available so the client can fall back gracefully.
+    """
+    import json
+    from datetime import datetime
+
+    desktop = os.getenv("DESKTOP_BACKUP_PATH", "/host_desktop")
+    if not os.path.isdir(desktop):
+        raise HTTPException(
+            status_code=503,
+            detail=f"Desktop mount not available at {desktop}",
+        )
+
+    now = datetime.now()
+    filename = f"github_bookmarks_{now.strftime('%Y-%m-%d_%H-%M-%S')}.json"
+    filepath = os.path.join(desktop, filename)
+
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(payload.model_dump(), f, indent=2, ensure_ascii=False)
+        return {"filename": filename, "path": filepath}
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Could not write backup: {e}")
 
 
 @app.get("/api/import/sync-progress")
@@ -475,7 +610,7 @@ async def get_import_sync_progress():
         "remaining_seconds": progress_dict.get("remaining_seconds", 0),
         "success_count": progress_dict.get("success_count", 0),
         "error_count": progress_dict.get("error_count", 0),
-        "is_running": progress_dict.get("total", 0) > 0 and progress_dict.get("current", 0) < progress_dict.get("total", 0),
+        "is_running": progress_dict.get("status") == "scanning",
         "percentage": progress_dict.get("percentage", 0),
         "is_paused": progress_dict.get("is_paused", False),
         "pause_reason": progress_dict.get("pause_reason"),
@@ -710,7 +845,7 @@ async def import_repository_url(
         asyncio.create_task(sync_repository_metadata(
             repo=new_repo,
             db=db,
-            github_token=os.getenv("GITHUB_TOKEN")
+            github_token=None
         ))
     except Exception as e:
         print(f"[IMPORT-URL] Could not trigger background sync: {e}")
@@ -804,6 +939,40 @@ async def delete_repository(repo_id: int, db: Session = Depends(get_db)):
     if not success:
         raise HTTPException(status_code=404, detail="Repository not found")
     return {"message": "Repository deleted"}
+
+
+@app.get("/api/repositories/{repo_id}/readme")
+async def get_repository_readme(repo_id: int, db: Session = Depends(get_db)):
+    """Fetch README.md content for a repository from raw.githubusercontent.com"""
+    import httpx
+
+    repo = repo_crud.get_repository(db, repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    parsed = GitHubService.parse_github_url(repo.url)
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Invalid GitHub URL")
+
+    owner, repo_name = parsed
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/plain,text/html,*/*;q=0.9",
+    }
+
+    # Try HEAD branch first, then common default branch names
+    for branch in ("HEAD", "main", "master"):
+        url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/README.md"
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                return {"content": resp.text, "url": repo.url}
+        except Exception:
+            continue
+
+    raise HTTPException(status_code=404, detail="README.md not found")
 
 
 @app.get("/api/categories")
@@ -906,14 +1075,14 @@ async def get_health_check_progress(job_id: str):
 
 
 async def perform_bulk_health_check(job_id: str, repository_ids: list):
-    """Background task to perform health check with rate limiting and progress tracking"""
+    """Background task to perform health check using stealth HTML fetching"""
     try:
-        import requests
         import re
         import time
         from datetime import datetime
         from services.cache_service import CacheService
         from database import SessionLocal
+        from services.bookmark_parser import _stealth_fetch_github_meta
         
         logger.info(f"[HEALTH-CHECK-TASK] Starting background task for job {job_id}")
         logger.info(f"[HEALTH-CHECK-TASK] Requested repository IDs: {len(repository_ids)}")
@@ -923,40 +1092,23 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
         repos = db.query(Repository).filter(Repository.id.in_(repository_ids)).all()
         logger.info(f"[HEALTH-CHECK-TASK] Found {len(repos)} repositories in database")
         
-        # GitHub API Rate Limiting:
-        # - Unauthenticated: 60 req/hour (1 per minute)
-        # - Authenticated: 5000 req/hour (1.4 per second)
-        # We use 150ms delay = ~6.7 req/sec (safe for authenticated, respects limits)
-        GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', None)  # Optional GitHub token for higher limits
-        REQUEST_DELAY = 0.15  # 150ms delay between requests (~6.7 req/sec)
-        CHUNK_SIZE = 50  # Process in chunks of 50, pause between chunks
-        CHUNK_DELAY = 2  # 2 second delay between chunks
+        STEALTH_DELAY = 1.0
+        CHUNK_SIZE = 10
+        CHUNK_DELAY = 3
         
-        headers = {}
-        if GITHUB_TOKEN:
-            headers['Authorization'] = f'token {GITHUB_TOKEN}'
-            logger.info(f"[GITHUB-API] Using GitHub authenticated requests (5000 req/hour limit)")
-        else:
-            logger.info(f"[GITHUB-API] Using GitHub unauthenticated requests (60 req/hour limit)")
-        
-        logger.info(f"[RATE-LIMITING] REQUEST_DELAY={REQUEST_DELAY}s, CHUNK_SIZE={CHUNK_SIZE}, CHUNK_DELAY={CHUNK_DELAY}s")
+        logger.info(f"[STEALTH-HEALTH] Using stealth HTML fetching (STEALTH_DELAY={STEALTH_DELAY}s, CHUNK_SIZE={CHUNK_SIZE}, CHUNK_DELAY={CHUNK_DELAY}s)")
         
         healthy_count = 0
         archived_count = 0
         not_found_count = 0
         error_count = 0
-        rate_limited = False
         repo_updates = []
         
         logger.info(f"[HEALTH-CHECK-TASK] Starting to process {len(repos)} repositories")
         logger.info(f"[HEALTH-CHECK-TASK] Will process in {(len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE} chunks")
         
-        # Process repos in chunks
         for chunk_idx in range(0, len(repos), CHUNK_SIZE):
             chunk = repos[chunk_idx:chunk_idx + CHUNK_SIZE]
-            chunk_num = (chunk_idx // CHUNK_SIZE) + 1
-            total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
-            logger.info(f"[HEALTH-CHECK-CHUNK] Processing chunk {chunk_num}/{total_chunks} - {len(chunk)} repos")
             chunk_num = (chunk_idx // CHUNK_SIZE) + 1
             total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
             logger.info(f"[HEALTH-CHECK-CHUNK] Processing chunk {chunk_num}/{total_chunks} - {len(chunk)} repos")
@@ -966,10 +1118,7 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                 global_idx = chunk_idx + idx
                 
                 try:
-                    # Update progress
                     progress_msg = f"Checking {repo.name}..."
-                    if rate_limited:
-                        progress_msg += " (rate limited, slowing down)"
                     
                     CacheService.set(
                         f"health_check:{job_id}",
@@ -981,18 +1130,15 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                             "archived": archived_count,
                             "not_found": not_found_count,
                             "errors": error_count,
-                            "rate_limited": rate_limited,
                             "message": progress_msg
                         },
                         ttl=3600
                     )
                     
-                    # Parse GitHub URL to extract owner and repo name
                     url = repo.url.rstrip('/')
                     if url.endswith('.git'):
                         url = url[:-4]
                     
-                    # Extract from https URL or git@github.com URL
                     https_match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
                     ssh_match = re.search(r'git@github\.com:([^/]+)/([^/]+)', url)
                     
@@ -1001,76 +1147,30 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                     elif ssh_match:
                         owner, repo_name = ssh_match.group(1), ssh_match.group(2)
                     else:
-                        # Not a GitHub URL, mark as unknown
                         repo_update["health_status"] = "unknown"
                         repo_update["last_health_check"] = datetime.utcnow()
                         repo_updates.append(repo_update)
                         continue
                     
-                    # Call GitHub API to check repository status
-                    api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
-                    response = requests.get(api_url, timeout=10, headers=headers)
+                    meta = await _stealth_fetch_github_meta(owner, repo_name)
                     
-                    # Check rate limiting (429 = Too Many Requests)
-                    if response.status_code == 429:
-                        rate_limited = True
-                        # Get retry-after header if available
-                        retry_after = int(response.headers.get('Retry-After', 60))
-                        logger.warning(f"GitHub API rate limited, sleeping for {retry_after}s")
-                        time.sleep(min(retry_after, 5))  # Cap at 5 seconds per hit
-                        
-                        # Retry this repo
-                        response = requests.get(api_url, timeout=10, headers=headers)
-                    
-                    if response.status_code == 200:
-                        # Repository exists
-                        data = response.json()
-                        
-                        # Update repository metadata
+                    if meta:
                         repo_update.update({
-                            "archived": data.get('archived', False),
-                            "stars": data.get('stargazers_count', 0),
-                            "forks": data.get('forks_count', 0),
-                            "watchers": data.get('watchers_count', 0),
-                            "language": data.get('language'),
-                            "topics": data.get('topics', []),
-                            "license": data.get('license', {}).get('name') if data.get('license') else None,
-                            "is_fork": data.get('fork', False),
-                            "open_issues": data.get('open_issues_count', 0),
-                            "default_branch": data.get('default_branch', 'main'),
+                            "language": meta.get("language"),
+                            "topics": meta.get("topics", "").split() if meta.get("topics") else [],
                             "last_metadata_sync": datetime.utcnow()
                         })
                         
-                        if data.get('created_at'):
-                            from datetime import datetime as dt
-                            repo_update["github_created_at"] = dt.fromisoformat(data['created_at'].replace('Z', '+00:00'))
-                        if data.get('updated_at'):
-                            from datetime import datetime as dt
-                            repo_update["github_updated_at"] = dt.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
-                        if data.get('pushed_at'):
-                            from datetime import datetime as dt
-                            repo_update["github_pushed_at"] = dt.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
+                        if meta.get("description") and (not repo.description or len(repo.description) < 50):
+                            repo_update["description"] = meta["description"]
                         
-                        # Set health status
-                        if data.get('archived'):
-                            repo_update["health_status"] = "archived"
-                            archived_count += 1
-                        else:
-                            repo_update["health_status"] = "healthy"
-                            healthy_count += 1
-                    
-                    elif response.status_code == 404:
-                        # Repository not found
+                        repo_update["health_status"] = "healthy"
+                        healthy_count += 1
+                    else:
                         repo_update["health_status"] = "not_found"
                         not_found_count += 1
-                    else:
-                        # Other API error, keep existing status
-                        logger.warning(f"API error for {repo.name}: {response.status_code}")
-                        repo_update["health_status"] = "unknown"
-                        error_count += 1
                     
-                    # Add delay between API calls to respect rate limits
-                    time.sleep(REQUEST_DELAY)
+                    time.sleep(STEALTH_DELAY)
                 
                 except Exception as e:
                     logger.error(f"Error checking repository {repo.id}: {e}")
@@ -1080,19 +1180,16 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                 repo_update["last_health_check"] = datetime.utcnow()
                 repo_updates.append(repo_update)
             
-            # Pause between chunks
             if chunk_idx + CHUNK_SIZE < len(repos):
                 chunk_num = (chunk_idx // CHUNK_SIZE) + 1
                 total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
                 logger.info(f"[HEALTH-CHECK-CHUNK] Completed chunk {chunk_num}/{total_chunks}, pausing {CHUNK_DELAY}s before next chunk")
                 time.sleep(CHUNK_DELAY)
         
-        # Batch update all repositories at once
         if repo_updates:
             db.bulk_update_mappings(Repository, repo_updates)
         db.commit()
         
-        # Mark as completed
         logger.info(f"[HEALTH-CHECK-TASK] Updating progress - marking job {job_id} as completed")
         CacheService.set(
             f"health_check:{job_id}",
@@ -1104,7 +1201,7 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                 "archived": archived_count,
                 "not_found": not_found_count,
                 "errors": error_count,
-                "message": f"✓ Complete: {healthy_count} healthy, {archived_count} archived, {not_found_count} removed (404)"
+                "message": f"✓ Complete: {healthy_count} healthy, {archived_count} archived, {not_found_count} not found"
             },
             ttl=3600
         )
@@ -1366,91 +1463,112 @@ async def verify_token(authorization: Optional[str] = Header(None)):
 
 @app.get("/api/github/metadata")
 async def fetch_github_metadata(url: str = Query(..., description="GitHub repository URL")):
-    """Fetch metadata from GitHub API for a repository URL"""
-    from services.github_service import GitHubService
+    """Fetch metadata for a repository URL via stealth HTML fetch (no GitHub API token required)"""
+    from services.bookmark_parser import _stealth_fetch_github_meta, _score_text_for_category
 
-    metadata = await GitHubService.fetch_repo_metadata(url)
-    if not metadata:
+    parsed = GitHubService.parse_github_url(url)
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Not a valid GitHub repository URL")
+
+    owner, repo_name = parsed
+    meta = await _stealth_fetch_github_meta(owner, repo_name)
+
+    if not meta:
         raise HTTPException(status_code=404, detail="Could not fetch metadata. Repository may not exist or is private.")
 
-    suggested_category = GitHubService.suggest_category_from_metadata(metadata)
+    text_for_category = " ".join(filter(None, [
+        meta.get("topics", ""),
+        meta.get("language", ""),
+        meta.get("description", ""),
+    ]))
+    suggested_category, _ = _score_text_for_category(text_for_category)
+    topics = meta.get("topics", "").split() if meta.get("topics") else []
 
     return {
-        "stars": metadata.stars,
-        "forks": metadata.forks,
-        "watchers": metadata.watchers,
-        "language": metadata.language,
-        "languages": metadata.languages,
-        "topics": metadata.topics,
-        "description": metadata.description,
-        "license": metadata.license,
-        "archived": metadata.archived,
-        "is_fork": metadata.is_fork,
-        "created_at": metadata.created_at,
-        "updated_at": metadata.updated_at,
-        "pushed_at": metadata.pushed_at,
-        "open_issues": metadata.open_issues,
-        "default_branch": metadata.default_branch,
-        "suggested_category": suggested_category
+        "stars": 0,
+        "forks": 0,
+        "watchers": 0,
+        "language": meta.get("language"),
+        "languages": {},
+        "topics": topics,
+        "description": meta.get("description"),
+        "license": None,
+        "archived": False,
+        "is_fork": False,
+        "created_at": None,
+        "updated_at": None,
+        "pushed_at": None,
+        "open_issues": 0,
+        "default_branch": "main",
+        "suggested_category": suggested_category or "other",
     }
 
 
 @app.post("/api/repositories/{repo_id}/sync-metadata")
-async def sync_repository_metadata(
+async def sync_repo_metadata_endpoint(
     repo_id: int,
     db: Session = Depends(get_db)
 ):
-    """Sync GitHub metadata for a repository"""
-    from services.github_service import GitHubService
+    """Sync metadata for a single repository via stealth HTML fetch (no GitHub API token required)."""
+    from services.bookmark_parser import _stealth_fetch_github_meta, _score_text_for_category
+    from sqlalchemy.orm.attributes import flag_modified
     from datetime import datetime
 
     repo = repo_crud.get_repository(db, repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    metadata = await GitHubService.fetch_repo_metadata(repo.url)
-    if not metadata:
-        return {"message": "Could not fetch metadata", "success": False}
+    norm = normalize_github_url(repo.url)
+    if not norm:
+        raise HTTPException(status_code=422, detail="URL is not a recognised GitHub repository")
 
-    # Update repository with metadata
-    repo.stars = metadata.stars
-    repo.forks = metadata.forks
-    repo.watchers = metadata.watchers
-    repo.language = metadata.language
-    repo.languages = metadata.languages
-    repo.topics = metadata.topics
-    repo.license = metadata.license
-    repo.archived = metadata.archived
-    repo.is_fork = metadata.is_fork
-    repo.open_issues = metadata.open_issues
-    repo.default_branch = metadata.default_branch
+    parts = norm.rstrip("/").split("/")
+    owner, repo_name = parts[-2], parts[-1]
+    meta = await _stealth_fetch_github_meta(owner, repo_name)
+
+    if not meta:
+        # Repo may be private, renamed, or deleted — update health only
+        repo.health_status = "not_found"
+        repo.last_health_check = datetime.utcnow()
+        db.commit()
+        raise HTTPException(status_code=502, detail="Could not reach repository page — it may be private, renamed, or deleted")
+
+    # Determine category from combined text
+    text_for_category = " ".join(filter(None, [
+        meta.get("topics", ""),
+        meta.get("language", ""),
+        meta.get("description", ""),
+        repo.title or repo.name or "",
+    ]))
+    category, score = _score_text_for_category(text_for_category)
+    if score == 0:
+        category = "other"
+
+    # Apply updates — flag JSON columns explicitly so SQLAlchemy tracks the change
+    repo.language = meta.get("language")
+    repo.topics = meta.get("topics", "").split() if meta.get("topics") else []
+    flag_modified(repo, "topics")
+
     repo.last_metadata_sync = datetime.utcnow()
+    repo.health_status = "healthy"
+    repo.category = category
+    repo.category_source = "stealth_fetch"
 
-    # Update health status based on archived flag
-    repo.health_status = "archived" if metadata.archived else "healthy"
-    repo.last_health_check = datetime.utcnow()
-
-    # Parse GitHub dates
-    if metadata.created_at:
-        try:
-            repo.github_created_at = datetime.fromisoformat(metadata.created_at.replace('Z', '+00:00'))
-        except:
-            pass
-    if metadata.updated_at:
-        try:
-            repo.github_updated_at = datetime.fromisoformat(metadata.updated_at.replace('Z', '+00:00'))
-        except:
-            pass
-    if metadata.pushed_at:
-        try:
-            repo.github_pushed_at = datetime.fromisoformat(metadata.pushed_at.replace('Z', '+00:00'))
-        except:
-            pass
+    if meta.get("description") and (not repo.description or len(repo.description) < 50):
+        repo.description = meta["description"]
 
     db.commit()
-    db.refresh(repo)
 
-    return {"message": f"Metadata synced for {repo.name}", "success": True, "repository": repo}
+    # Return only plain serialisable data — never the ORM object itself
+    return {
+        "success": True,
+        "message": f"Metadata synced for {repo.name}",
+        "language": repo.language,
+        "topics": repo.topics or [],
+        "category": repo.category,
+        "health_status": repo.health_status,
+        "last_metadata_sync": repo.last_metadata_sync.isoformat() if repo.last_metadata_sync else None,
+    }
 
 
 # ============ TAGS ENDPOINTS ============

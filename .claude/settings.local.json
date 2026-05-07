@@ -16,7 +16,10 @@
       "Bash(docker-compose logs:*)",
       "Bash(docker-compose restart:*)",
       "Bash(docker-compose build:*)",
-      "Bash(docker-compose exec db psql:*)"
+      "Bash(docker-compose exec db psql:*)",
+      "Bash(npm install *)",
+      "Bash(cat /home/ozo/.npm/_logs/2026-05-06T21_45_14_765Z-eresolve-report.txt 2>/dev/null | head -30)",
+      "Read(//home/ozo/.npm/_logs/**)"
     ]
   }
 }

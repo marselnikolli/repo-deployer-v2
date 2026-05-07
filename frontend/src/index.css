@@ -3,6 +3,7 @@
 
 @plugin "tailwindcss-animate";
 @plugin "tailwindcss-react-aria-components";
+@plugin "@tailwindcss/typography";
 
 /* Custom dark mode variant */
 @custom-variant dark (&:where(.dark-mode, .dark-mode *));

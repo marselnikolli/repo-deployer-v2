@@ -61,10 +61,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       MIRROR_DIR: /app/mirrors
       LOG_LEVEL: INFO
+      DESKTOP_BACKUP_PATH: /host_desktop
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
       - mirrors:/app/mirrors
+      - ${HOME}/Desktop:/host_desktop
     restart: unless-stopped
     deploy:
       resources:
@@ -100,6 +102,9 @@ services:
         limits:
           cpus: '1'
           memory: 512M
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     environment:
       REACT_APP_API_URL: http://localhost:8001
 

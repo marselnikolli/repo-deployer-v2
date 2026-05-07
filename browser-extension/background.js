@@ -2,14 +2,20 @@
  * background.js — Repo Deployer extension service worker (Manifest V3)
  *
  * Responsibilities:
- *  - Listen for messages from popup.js and content.js.
- *  - Cache the detected GitHub repo URL for the active tab.
- *  - Update the extension badge to show a visual cue on GitHub repo pages.
+ *  - Open the side panel when the action icon is clicked.
+ *  - Cache the list of detected GitHub repo URLs per tab.
+ *  - Update the extension badge (shows count) on each tab.
+ *  - Notify the side panel whenever the active tab or its URLs change.
  */
 
 'use strict';
 
-// Per-tab detected URL cache  { tabId: normalised_url | null }
+// Open side panel on action icon click
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+});
+
+// Per-tab detected URLs cache  { tabId: string[] }
 const tabUrlCache = {};
 
 // ─── Normalise a GitHub URL to owner/repo form ─────────────────────────────────
@@ -25,42 +31,53 @@ function normaliseGitHubUrl(url) {
   }
 }
 
-// ─── Badge helper ──────────────────────────────────────────────────────────────
-function setBadge(tabId, detected) {
-  if (detected) {
-    chrome.action.setBadgeText({ text: '↑', tabId });
+// ─── Badge helper — shows URL count ───────────────────────────────────────────
+function setBadge(tabId, urls) {
+  const n = urls?.length ?? 0;
+  if (n > 0) {
+    chrome.action.setBadgeText({ text: n > 9 ? '9+' : String(n), tabId });
     chrome.action.setBadgeBackgroundColor({ color: '#238636', tabId });
   } else {
     chrome.action.setBadgeText({ text: '', tabId });
   }
 }
 
+// ─── Notify the side panel to refresh its URL list ────────────────────────────
+function notifySidePanel() {
+  // Sending to a non-open side panel throws "no receiver" — suppress it.
+  chrome.runtime.sendMessage({ type: 'TAB_CHANGED' }, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
 // ─── Message handler ───────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
-  // Content script reports detected URL
-  if (message.type === 'REPORT_URL') {
+  // Content script reports the full list of GitHub repo URLs on its page
+  if (message.type === 'REPORT_URLS') {
     const tabId = sender.tab?.id;
-    if (!tabId) return;
-    const norm = normaliseGitHubUrl(message.url);
-    tabUrlCache[tabId] = norm;
-    setBadge(tabId, Boolean(norm));
+    if (tabId == null) return;
+    const urls = (message.urls || []).filter(Boolean);
+    tabUrlCache[tabId] = urls;
+    setBadge(tabId, urls);
     sendResponse({ ok: true });
+    // Tell the panel to refresh if this is the tab the user is looking at
+    chrome.tabs.query({ active: true, currentWindow: true }, ([active]) => {
+      if (active?.id === tabId) notifySidePanel();
+    });
     return;
   }
 
-  // Popup asks for the cached URL
-  if (message.type === 'GET_DETECTED_URL') {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tabId = tabs[0]?.id;
-      const cached = tabId ? tabUrlCache[tabId] : null;
-      if (cached) {
-        sendResponse({ url: cached });
+  // Side panel requests the URLs for the currently active tab
+  if (message.type === 'GET_DETECTED_URLS') {
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      const tabId = tab?.id;
+      const cached = tabId != null ? tabUrlCache[tabId] : undefined;
+      if (cached !== undefined) {
+        sendResponse({ urls: cached });
       } else {
-        // Fallback: try to get the URL from the active tab directly
-        const tabUrl = tabs[0]?.url || '';
-        const norm = normaliseGitHubUrl(tabUrl);
-        sendResponse({ url: norm });
+        const norm = normaliseGitHubUrl(tab?.url || '');
+        sendResponse({ urls: norm ? [norm] : [] });
       }
     });
     return true; // async response
@@ -72,10 +89,18 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   delete tabUrlCache[tabId];
 });
 
-// ─── Re-evaluate badge when navigating ────────────────────────────────────────
+// ─── Re-evaluate on navigation (content script will override once loaded) ─────
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   const norm = normaliseGitHubUrl(tab.url || '');
-  tabUrlCache[tabId] = norm;
-  setBadge(tabId, Boolean(norm));
+  tabUrlCache[tabId] = norm ? [norm] : [];
+  setBadge(tabId, tabUrlCache[tabId]);
+  chrome.tabs.query({ active: true, currentWindow: true }, ([active]) => {
+    if (active?.id === tabId) notifySidePanel();
+  });
+});
+
+// ─── Notify panel whenever the user switches tabs ─────────────────────────────
+chrome.tabs.onActivated.addListener(() => {
+  notifySidePanel();
 });

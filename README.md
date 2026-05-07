@@ -80,7 +80,7 @@ docker-compose up --build
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│              React 19 Frontend (TypeScript)             │
+│              React Frontend (TypeScript)                │
 │  • Vite build system                                    │
 │  • Zustand state management                             │
 │  • Tailwind CSS styling                                 │
@@ -366,13 +366,13 @@ When you clone a repository, the system automatically creates a ZIP archive of t
 ### Using ZIP Archives
 ```bash
 # Check ZIP status
-curl http://localhost:8001/api/repositories/{id}/zip/status
+curl http://localhost:8000/api/repositories/{id}/zip/status
 
 # Get all ZIP statuses
-curl http://localhost:8001/api/zip/statuses
+curl http://localhost:8000/api/zip/statuses
 
 # Manually trigger ZIP for all unarchived repos
-curl -X POST http://localhost:8001/api/zip/sync
+curl -X POST http://localhost:8000/api/zip/sync
 ```
 
 ## Metadata Synchronization

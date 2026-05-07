@@ -197,7 +197,11 @@ class CloneQueueService:
 
         try:
             repos_dir = os.getenv("REPOS_DIR", "/app/repos")
-            zip_path = os.path.join(repos_dir, f"{repository_name.replace('/', '_')}.zip")
+            if '/' in repository_name:
+                owner, repo = repository_name.split('/', 1)
+            else:
+                owner, repo = "unknown", repository_name
+            zip_path = os.path.join(repos_dir, owner, repo, f"{repo}.zip")
             
             # Enqueue the ZIP job
             if self.zip_queue.enqueue(repository_id, repository_url, zip_path):

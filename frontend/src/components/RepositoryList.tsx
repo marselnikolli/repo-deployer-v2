@@ -18,12 +18,14 @@ import {
   Heart,
   Star,
   GitFork,
+  RefreshCw,
 } from 'lucide-react'
 import { useRepositoryStore } from '@/store/useRepositoryStore'
 import { repositoryApi, bulkApi, generalApi, searchApi, exportApi, cloneQueueApi } from '@/api/client'
 import { cx } from '@/utils/cx'
 import toast from 'react-hot-toast'
 import { RepositoryDetails } from './RepositoryDetails'
+import { ReadmeModal } from './ReadmeModal'
 import { DeleteConfirmationModal } from './DeleteConfirmationModal'
 import { useKeyboardShortcuts, KEYBOARD_SHORTCUTS } from '@/hooks/useKeyboardShortcuts'
 
@@ -62,6 +64,7 @@ interface Repository {
   language?: string
   health_status?: string
   last_health_check?: string
+  last_metadata_sync?: string
 }
 
 export function RepositoryList() {
@@ -90,11 +93,14 @@ export function RepositoryList() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
+  const [readmeRepo, setReadmeRepo] = useState<Repository | null>(null)
   const [focusedIndex, setFocusedIndex] = useState<number>(-1)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [cloneJobs, setCloneJobs] = useState<any[]>([])
   const [isCloning, setIsCloning] = useState(false)
   const [isHealthChecking, setIsHealthChecking] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null)
   const [importJobs, setImportJobs] = useState<any[]>([])
   
   // Delete confirmation modal state
@@ -352,6 +358,46 @@ export function RepositoryList() {
     }
   }
 
+
+  const handleBulkSyncMetadata = async () => {
+    if (selectedIds.size === 0) return
+
+    const ids = Array.from(selectedIds)
+    const total = ids.length
+    setIsSyncing(true)
+    setSyncProgress({ done: 0, total })
+
+    // 3 concurrent workers — stealth fetches to github.com, keep it polite
+    let nextIdx = 0, done = 0, succeeded = 0, failed = 0
+
+    async function worker() {
+      while (true) {
+        const i = nextIdx++
+        if (i >= total) break
+        try {
+          await repositoryApi.syncMetadata(ids[i])
+          succeeded++
+        } catch {
+          failed++
+        }
+        done++
+        setSyncProgress({ done, total })
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(3, total) }, worker))
+
+    setIsSyncing(false)
+    setSyncProgress(null)
+
+    if (failed === 0) {
+      toast.success(`Metadata synced for ${succeeded} repositories`)
+    } else {
+      toast.error(`Synced ${succeeded}, failed ${failed}`)
+    }
+
+    fetchRepositories()
+  }
 
   const handleDeleteAll = async () => {
     if (totalCount === 0) return
@@ -687,6 +733,20 @@ export function RepositoryList() {
               Health Check
             </button>
             <button
+              onClick={handleBulkSyncMetadata}
+              disabled={isSyncing}
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-warning-700)] dark:text-[var(--color-warning-400)] bg-[var(--color-warning-50)] dark:bg-[var(--color-warning-900)] border border-[var(--color-warning-300)] dark:border-[var(--color-warning-700)] rounded-[var(--radius-md)] hover:bg-[var(--color-warning-100)] dark:hover:bg-[var(--color-warning-800)] transition-colors disabled:opacity-50"
+            >
+              {isSyncing ? (
+                <Loader2 className="size-4 inline mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4 inline mr-1" />
+              )}
+              {isSyncing && syncProgress
+                ? `Syncing ${syncProgress.done}/${syncProgress.total}`
+                : 'Sync Metadata'}
+            </button>
+            <button
               onClick={handleBulkDelete}
               className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-error-700)] dark:text-[var(--color-error-400)] bg-[var(--color-error-50)] dark:bg-[var(--color-error-900)] border border-[var(--color-error-300)] dark:border-[var(--color-error-700)] rounded-[var(--radius-md)] hover:bg-[var(--color-error-100)] dark:hover:bg-[var(--color-error-800)] transition-colors"
             >
@@ -810,9 +870,13 @@ export function RepositoryList() {
                     <td className="px-4 py-3 min-w-[200px] max-w-[320px]">
                       <div className="flex items-start gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-fg-primary)]">
+                          <button
+                            className="text-[length:var(--text-sm)] font-medium text-[var(--color-brand-600)] hover:underline text-left"
+                            onClick={(e) => { e.stopPropagation(); setReadmeRepo(repo) }}
+                            title="View README"
+                          >
                             {repo?.name || 'Unknown'}
-                          </p>
+                          </button>
                           {repo?.title && (
                             <p className="text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] truncate">
                               {repo.title}
@@ -844,6 +908,18 @@ export function RepositoryList() {
                     </td>
                     <td className="px-4 py-3 min-w-[180px]">
                       <div className="flex flex-col gap-1.5">
+                        {/* Sync state */}
+                        {repo?.last_metadata_sync ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-teal-50 text-teal-700 rounded-[var(--radius-md)] w-fit">
+                            <RefreshCw className="size-3" />
+                            Synced
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-gray-100 text-gray-500 rounded-[var(--radius-md)] w-fit">
+                            <RefreshCw className="size-3" />
+                            Not synced
+                          </span>
+                        )}
                         {/* Cloning state */}
                         <div className="flex items-center gap-2">
                           {repo?.cloned && (
@@ -1031,6 +1107,15 @@ export function RepositoryList() {
           repository={selectedRepo}
           onClose={() => setSelectedRepo(null)}
           onUpdate={fetchRepositories}
+        />
+      )}
+
+      {/* README Modal */}
+      {readmeRepo && (
+        <ReadmeModal
+          repoName={readmeRepo.name}
+          repoUrl={readmeRepo.url}
+          onClose={() => setReadmeRepo(null)}
         />
       )}
 

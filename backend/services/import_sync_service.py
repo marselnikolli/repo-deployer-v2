@@ -6,8 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Callable, Tuple, List
 from sqlalchemy.orm import Session
 from models import Repository
-from services.github_service import GitHubService, GitHubRateLimitError, GitHubAuthError
-from services.readme_parser import ReadmeParser
+from services.github_service import GitHubService
 from services.bookmark_parser import smart_categorize
 from crud.repository import update_repository
 import os
@@ -21,12 +20,7 @@ def is_rate_limit_error(exception: Exception) -> Tuple[bool, Optional[int]]:
     """
     error_str = str(exception).lower()
     
-    # Check for common rate limit indicators
     if "403" in error_str or "rate limit" in error_str or "api rate" in error_str:
-        # Try to extract reset time from error message or calculate default
-        # GitHub rate limit resets every hour
-        # For unauthenticated requests: 60 requests/hour
-        # For authenticated requests: 5000 requests/hour
         reset_timestamp = datetime.utcnow() + timedelta(hours=1)
         return True, reset_timestamp.timestamp()
     
@@ -135,6 +129,40 @@ def stop_sync():
     print("[SYNC] Stop requested")
 
 
+async def _download_readme_to_disk(owner: str, repo_name: str) -> bool:
+    """
+    Fetch README.md from raw.githubusercontent.com and save it to
+    {REPOS_DIR}/{owner}/{repo_name}/README.md.
+    Returns True if the file was written, False otherwise.
+    """
+    import httpx
+    from pathlib import Path
+
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    dest_dir = Path(repos_dir) / owner / repo_name
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_file = dest_dir / "README.md"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/plain,*/*;q=0.9",
+    }
+
+    for branch in ("HEAD", "main", "master"):
+        url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/README.md"
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                dest_file.write_text(resp.text, encoding="utf-8")
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
 async def sync_repository_metadata(
     repo: Repository,
     db: Session,
@@ -142,96 +170,65 @@ async def sync_repository_metadata(
     progress_callback: Optional[Callable] = None
 ) -> bool:
     """
-    Sync metadata and health for a single repository.
+    Sync metadata and health for a single repository using stealth HTML fetching.
+    No GitHub API calls are made — we parse the public GitHub page HTML instead.
     
     Args:
         repo: Repository to sync
         db: Database session
-        github_token: GitHub API token for fetch
+        github_token: Unused (kept for API compatibility)
         progress_callback: Callback function for progress updates
     
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Parse owner/repo from URL
-        parts = repo.url.rstrip('/').split('/')
-        owner = parts[-2]
-        repo_name = parts[-1]
+        from services.bookmark_parser import _stealth_fetch_github_meta, _score_text_for_category
         
-        # Fetch metadata (GitHub API)
-        metadata = await GitHubService.fetch_repo_metadata(repo.url)
-        
-        if metadata:
-            # Determine category using three-level smart categorization
-            category, category_source = await smart_categorize(
-                repo.url,
-                repo.title or repo.name or "",
-                github_token=github_token,
-                language=metadata.language,
-                topics=metadata.topics,
-                description=metadata.description,
+        parsed = GitHubService.parse_github_url(repo.url)
+        if not parsed:
+            update_repository(
+                db,
+                repo.id,
+                {'health_status': 'unknown', 'last_health_check': datetime.utcnow()}
             )
+            return False
+        
+        owner, repo_name = parsed
+        
+        meta = await _stealth_fetch_github_meta(owner, repo_name)
+        
+        if meta:
+            text_for_category = " ".join(filter(None, [
+                meta.get("topics", ""),
+                meta.get("language", ""),
+                meta.get("description", ""),
+                repo.title or repo.name or "",
+            ]))
+            category, category_source = _score_text_for_category(text_for_category)
+            if category_source == 0:
+                category, category_source = "other", "stealth_fetch"
 
-            # Update repository with metadata
             updates = {
-                'stars': metadata.stars,
-                'forks': metadata.forks,
-                'watchers': metadata.watchers,
-                'language': metadata.language,
-                'languages': metadata.languages,
-                'topics': metadata.topics,
-                'license': metadata.license,
-                'archived': metadata.archived,
-                'is_fork': metadata.is_fork,
-                'open_issues': metadata.open_issues,
-                'default_branch': metadata.default_branch,
-                'github_created_at': metadata.created_at,
-                'github_updated_at': metadata.updated_at,
-                'github_pushed_at': metadata.pushed_at,
+                'language': meta.get("language"),
+                'topics': meta.get("topics", "").split() if meta.get("topics") else [],
                 'last_metadata_sync': datetime.utcnow(),
                 'health_status': 'healthy',
                 'category': category,
                 'category_source': category_source,
             }
 
-            # Update description from API if better than what we have
-            if metadata.description and (not repo.description or len(repo.description) < 50):
-                updates['description'] = metadata.description
-            
-            # Try to fetch README for even richer description / category refinement
-            try:
-                readme_content = await ReadmeParser.fetch_readme(owner, repo_name, github_token)
-                if readme_content:
-                    # Only override category if README yields a more specific result
-                    best_category = ReadmeParser.determine_best_category(
-                        readme_content,
-                        category
-                    )
-                    if best_category != category:
-                        updates['category'] = best_category
-                        updates['category_source'] = 'readme_parse'
-                    
-                    # Extract description if still not set
-                    if not updates.get('description') and (not repo.description or len(repo.description) < 50):
-                        extracted_desc = ReadmeParser.extract_description(readme_content)
-                        if extracted_desc:
-                            updates['description'] = extracted_desc
-            except Exception as e:
-                print(f"Could not parse README for {owner}/{repo_name}: {e}")
+            if meta.get("description") and (not repo.description or len(repo.description) < 50):
+                updates['description'] = meta["description"]
             
             update_repository(db, repo.id, updates)
             return True
         else:
-            # GitHub API unavailable — fall back to stealth fetch for metadata + category
             category, category_source = await smart_categorize(
                 repo.url,
                 repo.title or repo.name or "",
-                github_token=github_token,
+                github_token=None,
             )
-            # Repository might not exist on GitHub
-            error_msg = f"Repository metadata not found: {repo.url}"
-            print(f"[SYNC] {error_msg}")
             update_repository(
                 db,
                 repo.id,
@@ -268,12 +265,13 @@ async def sync_repositories_metadata(
     delay_between_batches: float = 2.0
 ) -> dict:
     """
-    Sync metadata for multiple repositories with rate limiting.
+    Sync metadata for multiple repositories using stealth HTML fetching.
+    Uses longer delays between requests to avoid GitHub rate limiting.
     
     Args:
         repositories: List of repositories to sync
         db: Database session
-        github_token: GitHub API token
+        github_token: Unused (kept for API compatibility)
         batch_size: Number of repos to sync before delay
         delay_between_batches: Seconds to wait between batches
     
@@ -293,34 +291,21 @@ async def sync_repositories_metadata(
         sync_progress.pause_reason = None
         sync_progress.resume_at = None
         
-        # Check if GitHub token is set
-        if not github_token:
-            print("[SYNC] WARNING: No GitHub token set! Using unauthenticated requests (60/hour limit)")
-        
-        # Validate all repository URLs before syncing
-        valid_count, invalid_count = validate_repositories_urls(repositories)
-        print(f"[SYNC] URL validation: {valid_count} valid, {invalid_count} invalid URLs")
-        
-        if invalid_count > 0:
-            print(f"[SYNC] WARNING: Found {invalid_count} repositories with invalid GitHub URLs - these will be skipped")
-        
-        print(f"[SYNC] Starting metadata sync for {len(repositories)} repositories")
+        print(f"[SYNC] Starting stealth metadata sync for {len(repositories)} repositories")
+        print(f"[SYNC] Using stealth HTML fetching (no GitHub API calls)")
         
         for i, repo in enumerate(repositories):
-            # Check if user requested stop
             if sync_progress.should_stop:
                 print(f"[SYNC] Stop requested, halting sync at {i+1}/{len(repositories)}")
                 break
             
-            # Wait if manually paused
             while sync_progress.manual_paused:
                 await asyncio.sleep(0.5)
             
-            # Check for excessive errors (>80% failure rate) - indicates misconfiguration
-            if i > 5:  # After at least 5 attempts
+            if i > 5:
                 error_rate = sync_progress.error_count / (i + 1)
                 if error_rate > 0.85:
-                    error_msg = f"Error rate too high ({int(error_rate*100)}% failures). Stopping sync. Check GitHub token and repository URLs."
+                    error_msg = f"Error rate too high ({int(error_rate*100)}% failures). Stopping sync. Check repository URLs."
                     print(f"[SYNC] {error_msg}")
                     sync_progress.sync_error = error_msg
                     sync_progress.status = "stopped"
@@ -331,7 +316,6 @@ async def sync_repositories_metadata(
                 sync_progress.current = i + 1
                 sync_progress.current_repo = f"{repo.name} ({i+1}/{len(repositories)})"
                 
-                # Skip invalid URLs
                 parsed = GitHubService.parse_github_url(repo.url)
                 if not parsed:
                     print(f"[SYNC] Skipping {i+1}/{len(repositories)}: invalid URL {repo.url}")
@@ -341,77 +325,23 @@ async def sync_repositories_metadata(
                 print(f"[SYNC] Processing {i+1}/{len(repositories)}: {repo.name}")
                 
                 success = await sync_repository_metadata(repo, db, github_token)
-                
+
                 if success:
                     sync_progress.updated_count += 1
+                    parsed = GitHubService.parse_github_url(repo.url)
+                    if parsed:
+                        await _download_readme_to_disk(parsed[0], parsed[1])
                 else:
                     sync_progress.error_count += 1
                 
-                # Rate limiting: pause between batches
                 if (i + 1) % batch_size == 0 and (i + 1) < len(repositories):
                     print(f"[SYNC] Batch {(i+1)//batch_size} complete, waiting {delay_between_batches}s")
                     await asyncio.sleep(delay_between_batches)
                     
-            except GitHubRateLimitError as e:
-                # Rate limit hit - pause without auto-resume
-                message = "GitHub API rate limit reached (60 requests/hour for unauthenticated access). Please add a GITHUB_TOKEN environment variable and resume."
-                print(f"[SYNC] {message}")
-                
-                sync_progress.is_paused = True
-                sync_progress.pause_reason = message
-                sync_progress.status = "paused"
-                
-                # Don't auto-resume - let user manually add token and resume
-                print(f"[SYNC] Pausing sync - user must add GitHub token and manually resume")
-                break
-                    
-            except GitHubAuthError as e:
-                # Authentication error
-                message = "GitHub API authentication failed. Invalid or revoked token."
-                print(f"[SYNC] {message}")
-                sync_progress.error_count += 1
-                sync_progress.sync_error = message
-                continue
-                
             except Exception as e:
-                error_str = str(e)
-                is_rate_limit, reset_time = is_rate_limit_error(e)
-                
-                if is_rate_limit and reset_time:
-                    # Pause due to rate limiting
-                    sync_progress.is_paused = True
-                    sync_progress.pause_reason = "GitHub API rate limit reached. Waiting for limit reset."
-                    sync_progress.resume_at = reset_time
-                    sync_progress.status = "paused"
-                    
-                    wait_seconds = int(reset_time - datetime.utcnow().timestamp())
-                    print(f"[SYNC] Rate limit hit! Pausing for {wait_seconds} seconds")
-                    
-                    # Wait for rate limit to reset
-                    await asyncio.sleep(wait_seconds + 1)
-                    
-                    # Resume
-                    sync_progress.is_paused = False
-                    sync_progress.pause_reason = None
-                    sync_progress.resume_at = None
-                    sync_progress.status = "scanning"
-                    print(f"[SYNC] Rate limit reset, resuming sync...")
-                    
-                    # Retry the current repo
-                    try:
-                        success = await sync_repository_metadata(repo, db, github_token)
-                        if success:
-                            sync_progress.updated_count += 1
-                        else:
-                            sync_progress.error_count += 1
-                    except Exception as retry_error:
-                        print(f"[SYNC] Error on retry {repo.name}: {retry_error}")
-                        sync_progress.error_count += 1
-                else:
-                    print(f"[SYNC] Error processing repo {repo.name}: {error_str}")
-                    sync_progress.error_count += 1
-                    # Continue syncing even on errors - don't pause
-                    continue
+                print(f"[SYNC] Error processing repo {repo.name}: {e}")
+                sync_progress.error_count += 1
+                continue
         
         sync_progress.status = "completed"
         sync_progress.is_paused = False

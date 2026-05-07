@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2, Loader, Info } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader } from 'lucide-react'
 import { cx } from '@/utils/cx'
 import { ErrorModal } from './ErrorModal'
 
@@ -26,35 +26,21 @@ export function ImportProgressBar() {
   const [countdownSeconds, setCountdownSeconds] = useState(0)
   const [showErrorModal, setShowErrorModal] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const [githubApiConfigured, setGithubApiConfigured] = useState<boolean | null>(null)
-
-  // Check once whether the GitHub API key is configured
-  useEffect(() => {
-    fetch('/api/config/status')
-      .then((r) => r.json())
-      .then((d) => setGithubApiConfigured(d.github_api_key_configured ?? false))
-      .catch(() => setGithubApiConfigured(false))
-  }, [])
 
   useEffect(() => {
-    // Poll for sync progress
     const interval = setInterval(async () => {
       try {
         const response = await fetch('/api/import/sync-progress')
         const data = await response.json()
         setProgress(data)
         
-        // Never show error modal - just display pause state in progress bar
-        // Errors will be visible through pause message in the progress bar
-        
-        // Show progress bar only if sync is running or just completed
         if (data.is_running) {
           setIsVisible(true)
           setCompletionTime(null)
         } else if (data.total === 0) {
           setIsVisible(false)
-        } else if (data.total > 0 && data.current === data.total) {
-          // Sync completed - show completion for 3 seconds then hide
+        } else if (data.total > 0) {
+          // completed, stopped, or failed — show briefly then auto-hide
           if (!completionTime) {
             setCompletionTime(Date.now())
           }
@@ -63,7 +49,7 @@ export function ImportProgressBar() {
       } catch (error) {
         console.error('Failed to fetch sync progress:', error)
       }
-    }, 500) // Poll every 500ms for smooth updates
+    }, 500)
 
     return () => clearInterval(interval)
   }, [completionTime])
@@ -138,17 +124,11 @@ export function ImportProgressBar() {
               <span className="text-sm font-medium text-[var(--color-fg-primary)]">
                 {progress.is_paused
                   ? 'Sync Paused'
-                  : githubApiConfigured
-                  ? 'Syncing Repository Metadata'
-                  : 'Syncing via Stealth Fetch'}
+                  : progress.is_running
+                  ? 'Scanning via Stealth Fetch'
+                  : 'Sync Complete'}
               </span>
             </div>
-            {!githubApiConfigured && !progress.is_paused && (
-              <span className="flex items-center gap-1 text-xs text-[var(--color-fg-tertiary)]">
-                <Info size={12} />
-                No GitHub API key — using public page parsing
-              </span>
-            )}
             <div className="text-xs text-[var(--color-fg-tertiary)]">
               {progress.current}/{progress.total} repositories
             </div>

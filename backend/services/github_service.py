@@ -158,18 +158,26 @@ class GitHubService:
 
     @classmethod
     async def check_repo_exists(cls, url: str) -> bool:
-        """Check if a GitHub repository exists and is accessible"""
+        """
+        Check if a GitHub repository exists via a plain HTTP HEAD request
+        to the public github.com page — no API token required.
+        """
         parsed = cls.parse_github_url(url)
         if not parsed:
             return False
 
         owner, repo = parsed
-
+        stealth_headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+        }
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
                 response = await client.head(
-                    f"{cls.BASE_URL}/repos/{owner}/{repo}",
-                    headers=cls._get_headers()
+                    f"https://github.com/{owner}/{repo}",
+                    headers=stealth_headers,
                 )
                 return response.status_code == 200
         except Exception:

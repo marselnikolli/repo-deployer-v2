@@ -42,26 +42,38 @@ def parse_github_url(url: str) -> tuple[str, str]:
     raise ValueError(f"Invalid GitHub URL: {url}")
 
 
+_STEALTH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
+
 def get_default_branch(url: str) -> str:
     """
-    Get the default branch of a GitHub repository
-    
-    Args:
-        url: GitHub repository URL
-        
-    Returns:
-        Default branch name (usually 'main' or 'master')
+    Detect the default branch of a GitHub repository via the public web page.
+    Tries main → master → develop via plain HTTP without using the GitHub API.
     """
     try:
         owner, repo = parse_github_url(url)
-        api_url = f"https://api.github.com/repos/{owner}/{repo}"
-        response = requests.get(api_url, timeout=10)
-        if response.status_code == 200:
-            return response.json().get('default_branch', 'main')
+        for branch in ("main", "master", "develop"):
+            try:
+                r = requests.head(
+                    f"https://github.com/{owner}/{repo}/tree/{branch}",
+                    headers=_STEALTH_HEADERS,
+                    timeout=5,
+                    allow_redirects=True,
+                )
+                if r.status_code == 200:
+                    return branch
+            except Exception:
+                continue
     except Exception as e:
         logger.warning(f"Could not determine default branch: {e}, using 'main'")
-    
-    return 'main'
+    return "main"
 
 
 def download_repo_as_zip(url: str, path: str, timeout_seconds: int = 300) -> bool:
@@ -190,14 +202,13 @@ def clone_repo(url: str, path: str, timeout_seconds: int = 300) -> bool:
             return False
         
         owner, repo = parse_github_url(url)
-        # Use repository name only (not owner-repo) to avoid duplicate folder nesting
         repo_folder_name = repo
-        
+
         # Use provided path as repos root directory
         repos_root = Path(path)
-        
-        # Create folder for this repository
-        repo_folder = repos_root / repo_folder_name
+
+        # Create {owner}/{repo_name}/ folder structure
+        repo_folder = repos_root / owner / repo_folder_name
         repo_folder.mkdir(parents=True, exist_ok=True)
         
         # ZIP filename inside repo folder

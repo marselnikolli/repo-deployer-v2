@@ -108,17 +108,23 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
     try {
       setSyncing(true)
       const response = await repositoryApi.syncMetadata(repo.id)
-      if (response.data.success) {
-        toast.success('Metadata synced successfully')
-        // Refresh repository data
-        const updated = await repositoryApi.get(repo.id)
-        setRepo(updated.data)
-        onUpdate?.()
-      } else {
-        toast.error('Failed to sync metadata')
-      }
-    } catch {
-      toast.error('Failed to sync metadata')
+      const data = response.data
+
+      // Apply the fields returned by the endpoint immediately
+      setRepo(prev => ({
+        ...prev,
+        language: data.language ?? prev.language,
+        topics: data.topics ?? prev.topics,
+        category: data.category ?? prev.category,
+        health_status: data.health_status ?? prev.health_status,
+        last_metadata_sync: data.last_metadata_sync ?? prev.last_metadata_sync,
+      }))
+
+      toast.success(data.message || 'Metadata synced')
+      onUpdate?.()
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      toast.error(detail ? `Sync failed: ${detail}` : 'Failed to sync metadata')
     } finally {
       setSyncing(false)
     }
