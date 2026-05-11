@@ -97,7 +97,7 @@ export const searchApi = {
     api.get('/search', { params: { q, category, cloned, deployed, limit, offset } }),
 }
 
-// Import endpoints
+// Import endpoints (backend auto-detects HTML and JSON formats)
 export const importApi = {
   analyzeHtml: (file: File) => {
     const formData = new FormData()

@@ -1,7 +1,8 @@
 """Bookmark parsing and GitHub URL extraction"""
 
+import json
 from html.parser import HTMLParser
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 import re
 import os
 import asyncio
@@ -72,6 +73,68 @@ def parse_html_bookmarks(html_content: str) -> List[Dict[str, str]]:
     except Exception as e:
         print(f"Error parsing bookmarks: {e}")
         return []
+
+
+def parse_json_bookmarks(json_content: str) -> List[Dict[str, str]]:
+    """Parse JSON bookmark file. Supports:
+    - Array of {url, title} objects
+    - Object with \"bookmarks\" array key (e.g. backup format)
+    - Object with \"repositories\" array key
+    - Array of URL strings
+    """
+    try:
+        data = json.loads(json_content)
+    except json.JSONDecodeError:
+        return []
+
+    bookmarks = []
+
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, str):
+                bookmarks.append({"url": item, "title": item})
+            elif isinstance(item, dict):
+                url = item.get("url") or item.get("href") or ""
+                title = item.get("title") or item.get("name") or url
+                if url:
+                    bookmarks.append({"url": url, "title": title})
+    elif isinstance(data, dict):
+        items = (
+            data.get("bookmarks")
+            or data.get("repositories")
+            or data.get("items")
+            or data.get("urls")
+            or []
+        )
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, str):
+                    bookmarks.append({"url": item, "title": item})
+                elif isinstance(item, dict):
+                    url = item.get("url") or item.get("href") or ""
+                    title = item.get("title") or item.get("name") or url
+                    if url:
+                        bookmarks.append({"url": url, "title": title})
+
+    return bookmarks
+
+
+def detect_file_type(content: str) -> str:
+    """Auto-detect whether content is HTML or JSON by examining first non-whitespace char."""
+    stripped = content.strip()
+    if not stripped:
+        return "html"
+    if stripped[0] in ("{", "["):
+        return "json"
+    return "html"
+
+
+def parse_bookmarks(content: str) -> List[Dict[str, str]]:
+    """Parse bookmarks from content, auto-detecting HTML vs JSON format."""
+    file_type = detect_file_type(content)
+    if file_type == "json":
+        return parse_json_bookmarks(content)
+    return parse_html_bookmarks(content)
 
 
 def filter_github_urls(bookmarks: List[Dict[str, str]]) -> List[Dict[str, str]]:

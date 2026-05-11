@@ -18,7 +18,7 @@ from datetime import timedelta
 from database import engine, SessionLocal, init_db
 from models import Repository, Category, Base
 from schemas import RepositorySchema, RepositoryCreate, RepositoryUpdate, BulkActionRequest, ImportResponse
-from services.bookmark_parser import parse_html_bookmarks, filter_github_urls, categorize_url, smart_categorize, normalize_github_url
+from services.bookmark_parser import parse_bookmarks, parse_html_bookmarks, filter_github_urls, categorize_url, smart_categorize, normalize_github_url
 from services.git_service import clone_repo, sync_repo, get_repo_info
 from services.clone_queue import clone_queue, CloneStatus
 from services.zip_queue import zip_queue
@@ -329,13 +329,13 @@ async def analyze_html_bookmarks(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Analyze HTML bookmark file and return preview (no import, no sync)"""
+    """Analyze HTML or JSON bookmark file and return preview (no import, no sync)"""
     try:
         # Read uploaded file
         contents = await file.read()
         
-        # Parse bookmarks
-        bookmarks = parse_html_bookmarks(contents.decode('utf-8'))
+        # Auto-detect and parse bookmarks (HTML or JSON)
+        bookmarks = parse_bookmarks(contents.decode('utf-8'))
         github_urls = filter_github_urls(bookmarks)
         
         if not github_urls:
@@ -380,13 +380,13 @@ async def import_from_html(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Import repositories from HTML bookmark file and trigger sync"""
+    """Import repositories from HTML or JSON bookmark file and trigger sync"""
     try:
         # Read uploaded file
         contents = await file.read()
         
-        # Parse bookmarks
-        bookmarks = parse_html_bookmarks(contents.decode('utf-8'))
+        # Auto-detect and parse bookmarks (HTML or JSON)
+        bookmarks = parse_bookmarks(contents.decode('utf-8'))
         github_urls = filter_github_urls(bookmarks)
         
         if not github_urls:
@@ -665,7 +665,7 @@ async def import_from_folder(
                 filepath = os.path.join(folder_path, filename)
                 with open(filepath, 'r', encoding='utf-8') as f:
                     content = f.read()
-                    bookmarks = parse_html_bookmarks(content)
+                    bookmarks = parse_bookmarks(content)
                     all_bookmarks.extend(bookmarks)
         
         github_urls = filter_github_urls(all_bookmarks)

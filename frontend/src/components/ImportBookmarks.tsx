@@ -32,8 +32,8 @@ export function ImportBookmarks() {
   })
 
   const handleFileSelect = async (file: File) => {
-    if (!file.name.endsWith('.html')) {
-      toast.error('Please upload an HTML file')
+    if (!file.name.endsWith('.html') && !file.name.endsWith('.json')) {
+      toast.error('Please upload an HTML or JSON file')
       return
     }
 
@@ -206,7 +206,7 @@ export function ImportBookmarks() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".html"
+                accept=".html,.json"
                 onChange={handleInputChange}
                 className="hidden"
               />
@@ -224,7 +224,7 @@ export function ImportBookmarks() {
                 or drag and drop
               </p>
               <p className="text-[length:var(--text-xs)] text-[var(--color-fg-quaternary)] mt-2">
-                HTML bookmark file only
+                HTML or JSON bookmark file
               </p>
             </div>
 
@@ -269,7 +269,7 @@ export function ImportBookmarks() {
                   Scanning Process
                 </p>
                 <ul className="text-[length:var(--text-xs)] text-[var(--color-info-700)] space-y-1">
-                  <li>• Parsing HTML bookmark file</li>
+                  <li>• Parsing bookmark file</li>
                   <li>• Extracting GitHub repository URLs</li>
                   <li>• Validating repository links</li>
                 </ul>

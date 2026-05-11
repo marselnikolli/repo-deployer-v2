@@ -2,79 +2,267 @@
 
 A powerful, self-hosted platform for managing, cloning, and deploying GitHub repositories. Import your browser bookmarks, organize repositories by category and tags, fetch GitHub metadata, and deploy to Docker containers.
 
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start — Local Machine](#quick-start--local-machine)
+- [Quick Start — Proxmox / Server](#quick-start--proxmox--server)
+- [Browser Extension Setup](#browser-extension-setup)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [API Reference](#api-reference)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Project Structure](#project-structure)
+- [Development (without Docker)](#development-without-docker)
+- [Tech Stack](#tech-stack)
+
+---
+
 ## Features
 
 ### Repository Management
-- **Bookmark Import** - Import GitHub URLs from browser bookmark HTML files (Chrome, Firefox, Edge)
-- **Drag & Drop** - Simply drag bookmark files onto the import area
-- **Smart Categorization** - Automatic category suggestions based on repository topics, language, and description
-- **Custom Tags** - Create color-coded tags for flexible organization
-- **Bulk Operations** - Update categories, clone, or delete multiple repositories at once
+- **Bookmark Import** — Import GitHub URLs from browser bookmark HTML files (Chrome, Firefox, Edge)
+- **Drag & Drop** — Simply drag bookmark files onto the import area
+- **Smart Categorization** — Automatic category suggestions based on repository topics, language, and description
+- **Custom Tags** — Create color-coded tags for flexible organization
+- **Bulk Operations** — Update categories, clone, or delete multiple repositories at once
 
 ### GitHub Integration
-- **Metadata Sync** - Fetch stars, forks, watchers, language, topics, and license info
-- **Health Monitoring** - Bulk check if repositories still exist on GitHub with progress tracking
-- **Rate Limiting** - Smart API rate limiting with configurable chunking and delays (supports 4000+ repos)
-- **GitHub Authentication** - Optional token support for 83x higher rate limits (5000 req/hr vs 60/hr)
-- **Duplicate Detection** - Prevents importing the same repository twice
-- **GitHub OAuth Login** - Sign in and register with your GitHub account
-- **Google OAuth Login** - Sign in and register with your Google account
+- **Metadata Sync** — Fetch stars, forks, watchers, language, topics, and license info
+- **Health Monitoring** — Bulk check if repositories still exist on GitHub with progress tracking
+- **Rate Limiting** — Smart API rate limiting with configurable chunking and delays (supports 4000+ repos)
+- **GitHub Authentication** — Optional token support for 83x higher rate limits (5000 req/hr vs 60/hr)
+- **Duplicate Detection** — Prevents importing the same repository twice
+- **GitHub OAuth Login** — Sign in and register with your GitHub account
+- **Google OAuth Login** — Sign in and register with your Google account
 
 ### GitHub Profile & Bookmarks
-- **GitHub Account Connection** - Link your GitHub account from User Settings
-- **Automatic Repository Sync** - Create a private "git-bookmark" repository and sync bookmarks automatically
-- **Smart Merging** - Intelligently merge local and remote bookmarks without duplicates
-- **Scheduled Sync** - Daily automatic sync at 2:00 AM UTC
-- **Manual Sync** - Trigger sync anytime with one click
-- **Secure Token Storage** - GitHub tokens encrypted with Fernet encryption
-- **Cross-Device Sync** - Keep your bookmarks in sync across all devices via GitHub
+- **GitHub Account Connection** — Link your GitHub account from User Settings
+- **Automatic Repository Sync** — Create a private "git-bookmark" repository and sync bookmarks automatically
+- **Smart Merging** — Intelligently merge local and remote bookmarks without duplicates
+- **Scheduled Sync** — Daily automatic sync at 2:00 AM UTC
+- **Manual Sync** — Trigger sync anytime with one click
+- **Secure Token Storage** — GitHub tokens encrypted with Fernet encryption
+- **Cross-Device Sync** — Keep your bookmarks in sync across all devices via GitHub
 
 ### Clone & Deploy
-- **Batch Cloning** - Clone multiple repositories simultaneously (up to 3 concurrent)
-- **Clone to ZIP** - Automatically create ZIP archives of cloned repositories (main/master branch)
-- **Background Sync** - ZIP creation runs asynchronously without blocking the UI
-- **ZIP Status Tracking** - Per-repository ZIP status (pending/in_progress/done/failed)
-- **Progress Tracking** - Real-time clone progress with status updates
-- **Docker Deployment** - Deploy cloned repositories to Docker containers
+- **Batch Cloning** — Clone multiple repositories simultaneously (up to 3 concurrent)
+- **Clone to ZIP** — Automatically create ZIP archives of cloned repositories (main/master branch)
+- **Background Sync** — ZIP creation runs asynchronously without blocking the UI
+- **ZIP Status Tracking** — Per-repository ZIP status (pending/in_progress/done/failed)
+- **Progress Tracking** — Real-time clone progress with status updates
+- **Docker Deployment** — Deploy cloned repositories to Docker containers
 
 ### Browser Extension
-- **Chrome & Firefox** - One-click import of GitHub repository URLs directly from your browser
-- **Repository Detection** - Detects GitHub URLs and allows manual entry as fallback
-- **Instant Sync** - Sends repositories directly to the app via local API
-- **UI Feedback** - Real-time confirmation and status updates during import
-- **Cross-Browser** - Works seamlessly across Chrome, Firefox, and Edge
+- **Chrome & Firefox** — One-click import of GitHub repository URLs directly from your browser
+- **Repository Detection** — Detects GitHub URLs and allows manual entry as fallback
+- **Instant Sync** — Sends repositories directly to the app via API
+- **Configurable Server URL** — Point the extension at localhost or any Proxmox/server IP
+- **Cross-Browser** — Works seamlessly across Chrome, Firefox, and Edge
 
 ### User Experience
-- **Keyboard Shortcuts** - Vim-style navigation (j/k), quick search (/), and more
-- **Sortable Columns** - Sort by name, date, stars, or any column
-- **Advanced Filters** - Filter by category, cloned status, deployed status
-- **Export Options** - Export to CSV, JSON, or Markdown
-- **Repository Details** - View full metadata in a slide-out panel
+- **Keyboard Shortcuts** — Vim-style navigation (j/k), quick search (/), and more
+- **Sortable Columns** — Sort by name, date, stars, or any column
+- **Advanced Filters** — Filter by category, cloned status, deployed status
+- **Export Options** — Export to CSV, JSON, or Markdown
+- **Repository Details** — View full metadata in a slide-out panel
 
-## Quick Start
+---
+
+## Quick Start — Local Machine
 
 ### Prerequisites
-- Docker & Docker Compose
+- Docker and Docker Compose
 - Git
 
-### Installation
+### Steps
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone <your-repo-url>
 cd repo-deployer-v2
 
-# Start all services
-docker-compose up --build
+# 2. Create your .env file
+cp .env.example .env
+# Edit .env and fill in your GitHub token, OAuth credentials, etc.
+
+# 3. Start all services
+docker compose up -d --build
 ```
 
-### Access Points
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:3000 |
-| API | http://localhost:8000 |
-| API Docs | http://localhost:8000/docs |
-| Database | localhost:5432 |
+### Access
+
+| Service  | URL                        |
+|----------|----------------------------|
+| Frontend | http://localhost:3000      |
+| API      | http://localhost:8001      |
+| API Docs | http://localhost:8001/docs |
+| Database | localhost:5432             |
+
+> **Bookmark backup files** are saved to your Desktop by default (`~/Desktop`).
+> Override this by setting `BACKUP_HOST_PATH=/your/path` in `.env`.
+
+---
+
+## Quick Start — Proxmox / Server
+
+Use the included setup script to deploy on a Proxmox container (LXC/VM) or any Linux server.
+
+### Prerequisites (on the Proxmox container)
+
+```bash
+apt update && apt install -y docker.io docker-compose-plugin git curl
+```
+
+### Steps
+
+```bash
+# 1. Clone the repository onto the container
+git clone <your-repo-url>
+cd repo-deployer-v2
+
+# 2. Run the setup script (auto-detects container IP)
+bash setup-proxmox.sh
+
+# — or pass your IP explicitly:
+bash setup-proxmox.sh 192.168.1.50
+```
+
+The script will:
+- Create `.env` from `.env.example` if it doesn't exist
+- Set `BACKUP_HOST_PATH=/opt/repo-deployer/backups` (creates the directory)
+- Update OAuth redirect URIs from `localhost` to your server IP
+- Build and start all containers using the Proxmox production overlay
+
+### Access
+
+Replace `<PROXMOX_IP>` with the IP shown at the end of the script output.
+
+| Service  | URL                              |
+|----------|----------------------------------|
+| Frontend | http://\<PROXMOX_IP\>:3000       |
+| API      | http://\<PROXMOX_IP\>:8001       |
+| API Docs | http://\<PROXMOX_IP\>:8001/docs  |
+
+### Managing the stack
+
+```bash
+# Start / restart
+docker compose -f docker-compose.yml -f docker-compose.proxmox.yml up -d
+
+# Stop
+docker compose -f docker-compose.yml -f docker-compose.proxmox.yml down
+
+# View logs
+docker compose logs -f
+
+# Update (pull new code and rebuild)
+git pull
+docker compose -f docker-compose.yml -f docker-compose.proxmox.yml up -d --build
+```
+
+### What docker-compose.proxmox.yml changes
+
+| Setting | Local default | Proxmox override |
+|---------|---------------|------------------|
+| Backend command | `uvicorn ... --reload` | `uvicorn ...` (no reload) |
+| Log level | INFO | WARNING |
+| Backup storage | `~/Desktop` bind mount | Named Docker volume `backups` |
+
+### OAuth redirect URIs (if using GitHub/Google login)
+
+After deploying, update your OAuth app callbacks to point to the server:
+
+- **GitHub OAuth app** → Settings → Authorization callback URL:
+  `http://<PROXMOX_IP>:3000/auth/github/callback`
+- **Google OAuth** → Cloud Console → Authorized redirect URI:
+  `http://<PROXMOX_IP>:3000/auth/google/callback`
+
+---
+
+## Browser Extension Setup
+
+### Installation
+
+#### Chrome / Edge
+1. Go to `chrome://extensions/`
+2. Enable **Developer mode** (top right toggle)
+3. Click **Load unpacked**
+4. Select the `browser-extension/` folder
+5. The extension icon appears in your toolbar
+
+#### Firefox
+1. Go to `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on**
+3. Select any file inside the `browser-extension/` folder
+4. The extension icon appears in your toolbar
+
+### Configuring the Server URL
+
+The extension works with both a local machine and a remote Proxmox server. You configure which one to use inside the extension itself — no reinstall needed.
+
+1. Click the extension icon to open the sidebar
+2. Scroll to the **Server URL** section at the bottom
+3. Enter the URL of your running instance:
+   - **Local:** `http://localhost:3000`
+   - **Proxmox:** `http://192.168.1.50:3000` (use your actual IP)
+4. Click **Save**
+
+The setting is persisted across browser restarts via `chrome.storage.sync`.
+
+### Usage
+
+1. Navigate to any GitHub repository page
+2. The extension auto-detects the repository URL
+3. Click **Import** next to any detected URL, or use **Import All**
+4. To import something not on the current page, paste a URL in **"Or Enter URL Manually"**
+5. To bulk-import from browser bookmarks, use the **Browser Bookmarks Import** section
+
+---
+
+## Configuration
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and fill in your values:
+
+```env
+# GitHub API token (optional but highly recommended)
+# Without: 60 req/hour  |  With: 5,000 req/hour
+# Get at: https://github.com/settings/tokens (scope: public_repo)
+GITHUB_TOKEN=ghp_...
+
+# Secret key for JWT tokens (generate a random 32+ char string)
+SECRET_KEY=change-me-to-something-random-and-long
+
+# GitHub OAuth (for Login with GitHub)
+# Create at: https://github.com/settings/developers
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+GITHUB_OAUTH_REDIRECT_URI=http://localhost:3000/auth/github/callback
+
+# Google OAuth (for Login with Google)
+# Create at: https://console.cloud.google.com/
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/auth/google/callback
+
+# Email (for password reset & notifications)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASSWORD=your_app_password_here
+
+# Backup path — where bookmark JSON exports are saved on the HOST
+# Leave blank to use ~/Desktop (local) or set to a path for Proxmox
+BACKUP_HOST_PATH=
+```
+
+> Database and Redis URLs are configured automatically inside `docker-compose.yml` and do not need to be set in `.env`.
+
+---
 
 ## Architecture
 
@@ -85,9 +273,9 @@ docker-compose up --build
 │  • Zustand state management                             │
 │  • Tailwind CSS styling                                 │
 └─────────────────────┬───────────────────────────────────┘
-                      │ REST API
+                      │ REST API  (/api proxy via Vite dev server)
 ┌─────────────────────▼───────────────────────────────────┐
-│              FastAPI Backend (Python 3.11)              │
+│              FastAPI Backend (Python 3.12)              │
 │  • Async endpoints                                      │
 │  • Background task processing                           │
 │  • Clone queue with threading                           │
@@ -100,6 +288,10 @@ docker-compose up --build
 │  • Caching layer                                        │
 └─────────────────────────────────────────────────────────┘
 ```
+
+The browser extension calls the **frontend URL** (e.g. `http://localhost:3000`). The Vite dev server proxies all `/api/*` requests to the FastAPI backend — so there is only one URL to configure in the extension regardless of environment.
+
+---
 
 ## API Reference
 
@@ -165,7 +357,7 @@ docker-compose up --build
 |--------|----------|-------------|
 | POST | `/api/bulk/update-category` | Update category for multiple repos |
 | POST | `/api/bulk/delete` | Delete multiple repositories |
-| POST | `/api/bulk/health-check` | Check health of all repositories with progress tracking |
+| POST | `/api/bulk/health-check` | Check health of all repositories |
 | GET | `/api/bulk/health-check/{job_id}/progress` | Get real-time health check progress |
 
 ### Sync Progress
@@ -176,6 +368,8 @@ docker-compose up --build
 | POST | `/api/import/sync/pause` | Pause the sync process |
 | POST | `/api/import/sync/resume` | Resume the sync process |
 | POST | `/api/import/sync/stop` | Stop the sync process |
+
+---
 
 ## Keyboard Shortcuts
 
@@ -192,316 +386,154 @@ docker-compose up --build
 | `Ctrl+E` | Export |
 | `Ctrl+Shift+R` | Refresh |
 
+---
+
 ## Project Structure
 
 ```
 repo-deployer-v2/
 ├── backend/
-│   ├── main.py                 # FastAPI application & routes
-│   ├── database.py             # Database configuration
-│   ├── models.py               # SQLAlchemy models
-│   ├── schemas.py              # Pydantic schemas
+│   ├── main.py                    # FastAPI application & routes
+│   ├── database.py                # Database configuration
+│   ├── models.py                  # SQLAlchemy models
+│   ├── schemas.py                 # Pydantic schemas
 │   ├── crud/
-│   │   ├── repository.py       # Repository CRUD
-│   │   └── tags.py             # Tags CRUD
+│   │   ├── repository.py
+│   │   └── tags.py
 │   ├── services/
-│   │   ├── bookmark_parser.py  # HTML bookmark parsing & categorization
-│   │   ├── git_service.py      # Git clone/sync & ZIP operations
-│   │   ├── github_service.py   # GitHub API integration
-│   │   ├── clone_queue.py      # Batch clone queue with ZIP auto-enqueue
-│   │   ├── zip_queue.py        # Async ZIP archive background queue
-│   │   ├── git_bookmark_sync.py# GitHub bookmark synchronization
-│   │   ├── export_service.py   # CSV/JSON/Markdown export
-│   │   ├── import_sync_service.py # Metadata sync with stealth fetch
-│   │   └── search_service.py   # Full-text search & analytics
+│   │   ├── github_service.py      # GitHub API integration
+│   │   ├── import_service.py      # Metadata sync
+│   │   ├── zip_queue.py           # Async ZIP archive queue
+│   │   └── email_service.py
+│   ├── migrations/                # SQL migration scripts
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── api/client.ts       # API client
-│   │   ├── store/              # Zustand stores
-│   │   ├── components/         # React components
-│   │   ├── hooks/              # Custom hooks
-│   │   └── pages/              # Page components
+│   │   ├── App.tsx
+│   │   └── ...
 │   ├── package.json
+│   ├── vite.config.ts
 │   └── Dockerfile
-├── browser-extension/          # Chrome & Firefox extension
-│   ├── manifest.json
-│   ├── popup.html
-│   ├── popup.js
-│   ├── icons/
-│   └── styles/
-├── docs/                       # Documentation
-│   ├── FEATURES.md
-│   ├── FEATURES_ROADMAP.md
-│   ├── FUTURE_FEATURES.md
-│   ├── GITHUB_API_RATE_LIMITING.md
-│   ├── HEALTH_CHECK_IMPLEMENTATION.md
-│   ├── RATE_LIMITING_QUICK_START.md
-│   └── ...
-├── docker-compose.yml
+├── browser-extension/
+│   ├── manifest.json              # Chrome / Edge (Manifest V3)
+│   ├── manifest.firefox.json      # Firefox (Manifest V2)
+│   ├── popup.html                 # Sidebar UI
+│   ├── popup.js                   # Sidebar logic
+│   ├── background.js              # Service worker (Chrome)
+│   ├── background.firefox.js      # Background script (Firefox)
+│   └── content.js                 # Page URL detection
+├── docs/                          # Detailed documentation
+├── docker-compose.yml             # Base compose (local + Proxmox base)
+├── docker-compose.proxmox.yml     # Proxmox production overrides
+├── setup-proxmox.sh               # One-command Proxmox setup script
+├── .env.example                   # Environment variable template
 └── README.md
 ```
 
-## Development
+---
+
+## Development (without Docker)
 
 ### Backend
+
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
+Requires a running PostgreSQL instance and Redis. Set `DATABASE_URL` and `REDIS_URL` in your shell or `.env`.
+
 ### Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Configuration
+The Vite dev server starts on port 3000 and proxies `/api` requests to `http://api:8000`. When running outside Docker, update `vite.config.ts` to point to your local backend (`http://localhost:8000`).
 
-### Environment Variables
-
-Create `.env` in the project root:
-
-```env
-# FastAPI settings
-SECRET_KEY=your_secret_key_here
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-ALGORITHM=HS256
-
-# GitHub OAuth Configuration (for login/registration)
-# Create app at: https://github.com/settings/developers
-# Authorization callback URL: http://localhost:3000/auth/github/callback
-GITHUB_OAUTH_CLIENT_ID=your_github_client_id
-GITHUB_OAUTH_CLIENT_SECRET=your_github_client_secret
-GITHUB_OAUTH_REDIRECT_URI=http://localhost:3000/auth/github/callback
-
-# Google OAuth Configuration (for login/registration)
-# Create credentials at: https://console.cloud.google.com/
-# Redirect URI: http://localhost:3000/auth/google/callback
-GOOGLE_OAUTH_CLIENT_ID=your_google_client_id
-GOOGLE_OAUTH_CLIENT_SECRET=your_google_client_secret
-GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/auth/google/callback
-
-# GitHub Bookmarks Encryption
-# Generate key: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-GITHUB_TOKEN_ENCRYPTION_KEY=your_fernet_encryption_key
-
-# GitHub API Authentication (Optional but recommended)
-# Without token: 60 requests/hour limit
-# With token: 5,000 requests/hour limit
-# Get token: https://github.com/settings/tokens (needs public_repo scope)
-GITHUB_TOKEN=github_pat_your_token_here
-
-# Email settings (optional)
-EMAIL_HOST=smtp.example.com
-EMAIL_PORT=587
-EMAIL_USER=your_email@example.com
-EMAIL_PASSWORD=your_email_password
-EMAIL_FROM=your_email@example.com
-EMAIL_FROM_NAME=Repo Deployer
-```
-
-The application automatically loads from `.env` via Docker Compose `env_file` directive.
-
-## Browser Extension Setup
-
-### Installation
-
-#### Chrome
-1. Go to `chrome://extensions/`
-2. Enable "Developer mode" (top right)
-3. Click "Load unpacked"
-4. Select the `browser-extension` folder from this repository
-5. The extension icon will appear in your toolbar
-
-#### Firefox
-1. Go to `about:debugging#/runtime/this-firefox`
-2. Click "Load Temporary Add-on"
-3. Select any file from the `browser-extension` folder
-4. The extension icon will appear in your toolbar
-
-### Usage
-1. Navigate to any GitHub repository
-2. Click the extension icon to automatically detect the URL
-3. Or manually paste a GitHub URL
-4. Click "Import to Repo Deployer"
-5. Repository is instantly added to your collection
-
-### Features
-- **Auto-Detection** - Automatically detects GitHub repository URLs on the current page
-- **Manual Entry** - Fall back to manual URL entry if auto-detection doesn't work
-- **Real-time Feedback** - Instant confirmation when repository is imported
-- **No Permissions** - Works without special permissions (uses public GitHub URLs)
-- **Cross-Browser** - Compatible with Chrome, Firefox, and Edge
+---
 
 ## Clone & Archive System
 
-### Clone to ZIP
-When you clone a repository, the system automatically creates a ZIP archive of the main branch (falling back to master if main doesn't exist). This happens entirely in the background without blocking the UI.
+When you clone a repository, the system automatically creates a ZIP archive of the main branch in the background.
 
-**Key Features:**
-- **Automatic** - ZIP archives are created automatically after successful clone
-- **Async Processing** - Uses background queue to avoid UI blocking
-- **Status Tracking** - Real-time per-repository ZIP status:
-  - `pending` - Job queued, waiting to process
-  - `in_progress` - Currently creating archive
-  - `done` - Archive successfully created
-  - `failed` - Archive creation failed
-- **Non-Blocking** - All operations run asynchronously
-- **Progress Tracking** - Monitor ZIP creation in the UI
+**ZIP status values:**
 
-### How It Works
-1. **Clone Starts** - User initiates repository clone via clone queue
-2. **Clone Completes** - On successful clone, repository is updated in database
-3. **ZIP Enqueued** - A ZIP job is automatically added to the background queue
-4. **ZIP Processing** - Background async worker processes the job (no UI impact)
-5. **Status Updated** - Database and UI updated with final ZIP status
-6. **Ready for Download** - ZIP file stored at `repos/{repo_name}.zip`
+| Status | Meaning |
+|--------|---------|
+| `pending` | Job queued, waiting to process |
+| `in_progress` | Currently creating archive |
+| `done` | Archive successfully created |
+| `failed` | Archive creation failed |
 
-### Using ZIP Archives
+**Quick API usage:**
 ```bash
-# Check ZIP status
-curl http://localhost:8000/api/repositories/{id}/zip/status
+# Check ZIP status for a repository
+curl http://localhost:8001/api/repositories/{id}/zip/status
 
 # Get all ZIP statuses
-curl http://localhost:8000/api/zip/statuses
+curl http://localhost:8001/api/zip/statuses
 
 # Manually trigger ZIP for all unarchived repos
-curl -X POST http://localhost:8000/api/zip/sync
+curl -X POST http://localhost:8001/api/zip/sync
 ```
 
-## Metadata Synchronization
-
-### Smart Categorization
-The system uses an intelligent fallback chain to categorize repositories:
-
-1. **GitHub API Topics** (if token configured) - Most reliable source
-2. **Repository Description** - Keyword matching from repo description
-3. **Language Detection** - Primary language from GitHub
-4. **URL Pattern Heuristics** - Infer from repository name/path
-5. **Manual Override** - User can always set custom categories
-
-### Sync Progress
-Monitor sync progress in real-time:
-- Current repository being processed
-- Progress percentage and count
-- Elapsed and estimated remaining time
-- Error tracking with pause/resume capabilities
-- Support for pause/resume/stop operations
-
-### Stealth Fetch (No API Key)
-If no GitHub API token is configured, the system falls back to:
-- Public page fetching (no bot detection evasion)
-- HTML parsing for topics and metadata
-- Language detection from repository data
-- Graceful degradation without errors
-
-## GitHub Profile & Bookmarks Setup
-
-### Connect Your GitHub Account
-1. Log in to Repo Deployer
-2. Click the settings icon (gear) in the top navigation
-3. Navigate to "GitHub Profile & Bookmarks" section
-4. Click "Connect GitHub Account"
-5. Authorize the application on GitHub
-6. A private "git-bookmark" repository will be created automatically
-7. Your bookmarks will be synced immediately
-
-### How It Works
-- **Initial Connection**: When you connect, the app creates a private "git-bookmark" repository and syncs all current bookmarks
-- **Scheduled Sync**: Bookmarks automatically sync daily at 2:00 AM UTC
-- **Smart Merging**: When syncing, the app intelligently merges local and remote bookmarks without creating duplicates
-- **Manual Sync**: Click "Sync Now" to trigger an immediate sync
-- **Secure Storage**: Your GitHub tokens are encrypted and stored securely
-### Bookmark Data Format
-Bookmarks are stored in a JSON file in your GitHub "git-bookmark" repository:
-```json
-{
-  "bookmarks": [
-    {
-      "url": "https://github.com/owner/repo",
-      "name": "Repository Name",
-      "description": "Brief description",
-      "category": "backend",
-      "addedAt": "2024-02-27T10:30:00",
-      "updatedAt": "2024-02-27T10:30:00"
-    }
-  ],
-  "lastSynced": "2024-02-27T10:30:00",
-  "syncStatus": "synced"
-}
-```
+---
 
 ## GitHub API Rate Limiting
 
-This application handles large repository collections efficiently:
+| Mode | Rate limit | Recommended for |
+|------|-----------|-----------------|
+| No token | 60 req/hour | < 100 repos |
+| With token | 5,000 req/hour | 4,000+ repos |
 
-- **Without GitHub Token:** 60 requests/hour (can scan ~100 repos before hitting limit)
-- **With GitHub Token:** 5,000 requests/hour (can scan 4,000+ repos with proper rate limiting)
-
-**Smart Rate Limiting Features:**
-- Configurable request delays (default: 150ms per request)
-- Batch processing in chunks (default: 50 repos per batch with 2s pause between chunks)
-- Automatic retry on rate limit (HTTP 429) with Retry-After header parsing
-- Real-time progress tracking with Redis backend
-- Comprehensive logging with [HEALTH-CHECK-*] prefixed messages
-
-**Setup GitHub Token:**
-1. Visit https://github.com/settings/tokens/new
+**Setup:**
+1. Go to https://github.com/settings/tokens/new
 2. Select scope: `public_repo`
-3. Copy the token
-4. Add to `.env`: `GITHUB_TOKEN=github_pat_...`
+3. Add to `.env`: `GITHUB_TOKEN=ghp_...`
 
-See [docs/GITHUB_API_RATE_LIMITING.md](docs/GITHUB_API_RATE_LIMITING.md) for detailed configuration.
+See [docs/GITHUB_API_RATE_LIMITING.md](docs/GITHUB_API_RATE_LIMITING.md) for detailed configuration and chunking behaviour.
+
+---
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 18+, TypeScript, Vite 6, Tailwind CSS, Zustand |
-| Backend | Python 3.11, FastAPI 0.104, SQLAlchemy, Pydantic |
+| Frontend | React 18, TypeScript, Vite 6, Tailwind CSS, Zustand |
+| Backend | Python 3.12, FastAPI, SQLAlchemy, Pydantic |
 | Database | PostgreSQL 16 |
 | Cache | Redis 7 |
 | Container | Docker, Docker Compose |
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## Documentation
-
-Detailed documentation is available in the `docs/` folder:
-
-- [FEATURES.md](docs/FEATURES.md) - Current implemented features
-- [FEATURES_ROADMAP.md](docs/FEATURES_ROADMAP.md) - Feature implementation status
-- [FUTURE_FEATURES.md](docs/FUTURE_FEATURES.md) - Planned features
-- [GITHUB_API_RATE_LIMITING.md](docs/GITHUB_API_RATE_LIMITING.md) - Rate limiting architecture
-- [RATE_LIMITING_QUICK_START.md](docs/RATE_LIMITING_QUICK_START.md) - Quick setup guide
-- [HEALTH_CHECK_IMPLEMENTATION.md](docs/HEALTH_CHECK_IMPLEMENTATION.md) - Health check details
-- [OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md) - Performance optimization plan
-
-### Recently Implemented Features (v2.1)
-- ✅ **Browser Extension** - Chrome & Firefox support for one-click repository import
-- ✅ **Clone to ZIP** - Automatic ZIP archive creation after clone (async, non-blocking)
-- ✅ **Smart Categorization** - Intelligent multi-level fallback chain for category assignment
-- ✅ **Progress Bar UI Fix** - Real-time visual feedback for sync operations
-- ✅ **Sync Footer Behavior** - Context-aware status display for API key configuration
-
-## License
-
-MIT License - see LICENSE file for details.
+| Extension | Chrome Manifest V3 / Firefox Manifest V2 |
 
 ---
 
-**Version:** 2.4.0  
-**Last Updated:** April 22, 2026  
-**Features:** Repository management, GitHub & Google OAuth, bookmarks sync, clone-to-ZIP archives, browser extension, smart categorization, bulk health checks, GitHub API rate limiting, Docker deployment, stealth metadata sync
+## Documentation
+
+| File | Contents |
+|------|----------|
+| [docs/FEATURES.md](docs/FEATURES.md) | Current implemented features |
+| [docs/FEATURES_ROADMAP.md](docs/FEATURES_ROADMAP.md) | Feature implementation status |
+| [docs/FUTURE_FEATURES.md](docs/FUTURE_FEATURES.md) | Planned features |
+| [docs/GITHUB_API_RATE_LIMITING.md](docs/GITHUB_API_RATE_LIMITING.md) | Rate limiting architecture |
+| [docs/RATE_LIMITING_QUICK_START.md](docs/RATE_LIMITING_QUICK_START.md) | Quick setup guide |
+| [docs/HEALTH_CHECK_IMPLEMENTATION.md](docs/HEALTH_CHECK_IMPLEMENTATION.md) | Health check details |
+| [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md) | OAuth configuration guide |
+
+---
+
+## License
+
+MIT License — see LICENSE file for details.
+
+---
+
+**Version:** 2.5.0  
+**Last Updated:** May 2026

@@ -1,0 +1,31 @@
+version: '3.8'
+
+# Proxmox / server deployment overrides.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.proxmox.yml up -d
+#
+# Differences from the default local compose:
+#  - Backend runs without --reload (production mode)
+#  - LOG_LEVEL defaults to WARNING
+#  - Backup files go to a named Docker volume instead of ~/Desktop
+#  - Resource limits are slightly relaxed for server use
+#  - Frontend listens on all interfaces with a fixed VITE_API_URL
+
+services:
+  api:
+    environment:
+      DESKTOP_BACKUP_PATH: /host_desktop
+      LOG_LEVEL: WARNING
+    volumes:
+      - ./backend:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - mirrors:/app/mirrors
+      - backups:/host_desktop
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  frontend:
+    environment:
+      VITE_API_URL: ""
+
+volumes:
+  backups:
+    driver: local
