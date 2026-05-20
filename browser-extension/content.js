@@ -37,6 +37,25 @@
     }
   }
 
+  function extractPageMetadata() {
+    const getText = sel => document.querySelector(sel)?.textContent?.trim() || null;
+    const parseCount = sel => {
+      const t = getText(sel);
+      if (!t) return null;
+      const n = parseInt(t.replace(/,/g, ''), 10);
+      return isNaN(n) ? null : n;
+    };
+    return {
+      description: document.querySelector('meta[name="description"]')?.content || null,
+      stars:    parseCount('#repo-stars-counter-star'),
+      forks:    parseCount('#repo-network-counter'),
+      language: getText('[itemprop="programmingLanguage"]'),
+      topics:   [...document.querySelectorAll('.topic-tag-link')].map(el => el.textContent.trim()).filter(Boolean),
+      license:  document.querySelector('.octicon-law')?.closest('a')?.textContent?.trim() || null,
+      is_fork:  !!document.querySelector('.octicon-repo-forked'),
+    };
+  }
+
   // ── Original tab/page URL detection (canonical → og:url → location) ──────────
   function detectPageRepoUrl() {
     const canonical = document.querySelector('link[rel="canonical"]');
@@ -79,7 +98,8 @@
     if (key === lastKey) return;
     lastKey = key;
     try {
-      chrome.runtime.sendMessage({ type: 'REPORT_URLS', urls }, () => {
+      const metadata = urls.length > 0 ? extractPageMetadata() : null;
+      chrome.runtime.sendMessage({ type: 'REPORT_URLS', urls, metadata }, () => {
         void chrome.runtime.lastError;
       });
     } catch { /* extension context invalidated — ignore */ }

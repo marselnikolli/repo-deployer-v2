@@ -15,7 +15,7 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 });
 
-// Per-tab detected URLs cache  { tabId: string[] }
+// Per-tab cache  { tabId: { urls: string[], metadata: object|null } }
 const tabUrlCache = {};
 
 // ─── Normalise a GitHub URL to owner/repo form ─────────────────────────────────
@@ -33,7 +33,7 @@ function normaliseGitHubUrl(url) {
 
 // ─── Badge helper — shows URL count ───────────────────────────────────────────
 function setBadge(tabId, urls) {
-  const n = urls?.length ?? 0;
+  const n = Array.isArray(urls) ? urls.length : (urls?.length ?? 0);
   if (n > 0) {
     chrome.action.setBadgeText({ text: n > 9 ? '9+' : String(n), tabId });
     chrome.action.setBadgeBackgroundColor({ color: '#238636', tabId });
@@ -58,7 +58,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const tabId = sender.tab?.id;
     if (tabId == null) return;
     const urls = (message.urls || []).filter(Boolean);
-    tabUrlCache[tabId] = urls;
+    tabUrlCache[tabId] = { urls, metadata: message.metadata || null };
     setBadge(tabId, urls);
     sendResponse({ ok: true });
     // Tell the panel to refresh if this is the tab the user is looking at
@@ -74,10 +74,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const tabId = tab?.id;
       const cached = tabId != null ? tabUrlCache[tabId] : undefined;
       if (cached !== undefined) {
-        sendResponse({ urls: cached });
+        sendResponse({ urls: cached.urls, metadata: cached.metadata });
       } else {
         const norm = normaliseGitHubUrl(tab?.url || '');
-        sendResponse({ urls: norm ? [norm] : [] });
+        sendResponse({ urls: norm ? [norm] : [], metadata: null });
       }
     });
     return true; // async response
@@ -93,8 +93,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   const norm = normaliseGitHubUrl(tab.url || '');
-  tabUrlCache[tabId] = norm ? [norm] : [];
-  setBadge(tabId, tabUrlCache[tabId]);
+  const urls = norm ? [norm] : [];
+  tabUrlCache[tabId] = { urls, metadata: null };
+  setBadge(tabId, urls);
   chrome.tabs.query({ active: true, currentWindow: true }, ([active]) => {
     if (active?.id === tabId) notifySidePanel();
   });

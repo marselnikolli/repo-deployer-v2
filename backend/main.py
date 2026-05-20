@@ -35,8 +35,19 @@ def _repo_zip_path(repos_dir: str, repo_name: str) -> str:
 
 
 # Simple Pydantic models for request bodies
+class RepoPageMetadata(BaseModel):
+    description: Optional[str] = None
+    stars: Optional[int] = None
+    forks: Optional[int] = None
+    language: Optional[str] = None
+    topics: Optional[List[str]] = None
+    license: Optional[str] = None
+    is_fork: Optional[bool] = None
+
 class ImportUrlRequest(BaseModel):
     url: str
+    metadata: Optional[RepoPageMetadata] = None
+    tags: Optional[List[str]] = None
 
 class BookmarkBackupPayload(BaseModel):
     exported_at: str
@@ -44,8 +55,14 @@ class BookmarkBackupPayload(BaseModel):
     total: int
     bookmarks: list
 
+class BulkImportEntry(BaseModel):
+    url: str
+    tags: Optional[List[str]] = None
+
 class BulkImportUrlsRequest(BaseModel):
-    urls: List[str]
+    urls: Optional[List[str]] = None
+    entries: Optional[List[BulkImportEntry]] = None
+    metadata: Optional[RepoPageMetadata] = None
 
 logger = logging.getLogger(__name__)
 
@@ -232,19 +249,28 @@ async def bulk_import_urls(
     """
     imported, skipped, failed = 0, 0, 0
 
+    # Coerce flat urls list into entries format for uniform handling
+    raw_entries = payload.entries or []
+    if not raw_entries and payload.urls:
+        raw_entries = [BulkImportEntry(url=u) for u in payload.urls]
+
     # Normalise and deduplicate within the incoming batch
     seen: set = set()
-    valid_urls: list = []
-    for raw in payload.urls:
-        norm = normalize_github_url(raw)
+    valid_entries: list = []  # list of (normalised_url, tags)
+    for entry in raw_entries:
+        norm = normalize_github_url(entry.url)
         if norm and norm not in seen:
             seen.add(norm)
-            valid_urls.append(norm)
+            valid_entries.append((norm, entry.tags or []))
         elif not norm:
             failed += 1
 
+    valid_urls = [url for url, _ in valid_entries]
+    tags_by_url = {url: tags for url, tags in valid_entries}
+
     if not valid_urls:
-        return {"imported": imported, "skipped": skipped, "failed": failed, "total": len(payload.urls)}
+        total = len(payload.urls or []) + len(payload.entries or [])
+        return {"imported": imported, "skipped": skipped, "failed": failed, "total": total}
 
     # One query to find which URLs already exist
     existing_urls: set = set(
@@ -264,7 +290,7 @@ async def bulk_import_urls(
             name=full_name,
             url=url,
             title=full_name,
-            category=categorize_url(url, full_name),
+            category="other",
         ))
 
     if repos_to_add:
@@ -278,14 +304,29 @@ async def bulk_import_urls(
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Bulk insert failed: {e}")
 
+        # Apply per-URL tags
+        has_tags = any(tags_by_url.get(r.url) for r in repos_to_add)
+        if has_tags:
+            from models import Tag
+            for repo in repos_to_add:
+                for tag_name in tags_by_url.get(repo.url, []):
+                    tag = db.query(Tag).filter(Tag.name == tag_name).first()
+                    if not tag:
+                        tag = Tag(name=tag_name)
+                        db.add(tag)
+                        db.flush()
+                    if tag not in repo.tags:
+                        repo.tags.append(tag)
+            db.commit()
+
         # Enqueue ZIP archives in background
         repos_dir = os.getenv("REPOS_DIR", "/app/repos")
-
         for repo in repos_to_add:
             zip_path = _repo_zip_path(repos_dir, repo.name)
             zip_queue.enqueue(repo.id, repo.url, zip_path)
 
-    return {"imported": imported, "skipped": skipped, "failed": failed, "total": len(payload.urls)}
+    total = len(payload.urls or []) + len(payload.entries or [])
+    return {"imported": imported, "skipped": skipped, "failed": failed, "total": total}
 
 
 @app.post("/api/import/html/analyze", response_model=ImportResponse)
@@ -715,17 +756,94 @@ async def import_repository_url(
     
     owner, repo_name = match.groups()
     
-    # Create repository with minimal data
+    title = f"{owner}/{repo_name}"
+
+    # Fetch authoritative metadata from GitHub public API (no token required).
+    # This populates description, topics, stars, forks at import time so the
+    # repo is immediately useful without waiting for a later sync.
+    import httpx
+    gh_description: Optional[str] = None
+    gh_topics: Optional[list] = None
+    gh_stars: Optional[int] = None
+    gh_forks: Optional[int] = None
+    gh_language: Optional[str] = None
+    gh_license: Optional[str] = None
+    gh_is_fork: Optional[bool] = None
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            gh_resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo_name}",
+                headers={
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "RepoDeployer/2.0",
+                },
+            )
+            if gh_resp.status_code == 200:
+                gh = gh_resp.json()
+                gh_description = gh.get("description") or None
+                gh_topics      = gh.get("topics") or []
+                gh_stars       = gh.get("stargazers_count")
+                gh_forks       = gh.get("forks_count")
+                gh_language    = gh.get("language") or None
+                gh_license     = (gh.get("license") or {}).get("name") or None
+                gh_is_fork     = gh.get("fork", False)
+    except Exception:
+        pass  # API unreachable — proceed with what the extension sent
+
+    # Prefer API data; fall back to extension page metadata for any missing fields
+    meta = body.metadata
+    final_description = gh_description or (meta.description if meta else None)
+    final_topics      = gh_topics      if gh_topics is not None else (meta.topics if meta else None)
+    final_language    = gh_language    or (meta.language if meta else None)
+    final_license     = gh_license     or (meta.license if meta else None)
+    final_stars       = gh_stars       if gh_stars is not None else (meta.stars if meta else None)
+    final_forks       = gh_forks       if gh_forks is not None else (meta.forks if meta else None)
+    final_is_fork     = gh_is_fork     if gh_is_fork is not None else (meta.is_fork if meta else None)
+
+    # Smart categorization using the now-rich metadata
+    from services.bookmark_parser import smart_categorize
+    category, category_source = await smart_categorize(
+        normalized_url,
+        title,
+        language=final_language,
+        topics=final_topics,
+        description=final_description,
+    )
+
     repo_data = RepositoryCreate(
         url=normalized_url,
         name=repo_name,
-        title=f"{owner}/{repo_name}",
-        category="other",
-        description=None
+        title=title,
+        category=category,
+        description=final_description,
     )
-    
+
     new_repo = repo_crud.create_repository(db, repo_data)
-    
+    new_repo.category_source = category_source
+    if final_stars    is not None: new_repo.stars    = final_stars
+    if final_forks    is not None: new_repo.forks    = final_forks
+    if final_language is not None: new_repo.language = final_language
+    if final_topics   is not None: new_repo.topics   = final_topics
+    if final_license  is not None: new_repo.license  = final_license
+    if final_is_fork  is not None: new_repo.is_fork  = final_is_fork
+    db.commit()
+    db.refresh(new_repo)
+
+    # Apply tags
+    if body.tags:
+        from models import Tag
+        for tag_name in body.tags:
+            tag = db.query(Tag).filter(Tag.name == tag_name).first()
+            if not tag:
+                tag = Tag(name=tag_name)
+                db.add(tag)
+                db.flush()
+            if tag not in new_repo.tags:
+                new_repo.tags.append(tag)
+        db.commit()
+        db.refresh(new_repo)
+
     return new_repo
 
 

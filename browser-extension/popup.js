@@ -46,6 +46,8 @@ const btnScanAgain     = document.getElementById('btn-scan-again');
 
 // ─── Global state ─────────────────────────────────────────────────────────────
 let detectedUrls   = [];   // mutable local copy — user can remove entries
+let pageMetadata   = null; // GitHub page metadata from content script
+const urlTags      = {};   // { idx: "tag1, tag2" } — per-URL tag strings
 let foundBookmarks = [];
 
 // ─── General helpers ──────────────────────────────────────────────────────────
@@ -109,7 +111,7 @@ function renderDetectedUrls() {
     const btnImport = document.createElement('button');
     btnImport.className = 'btn-item-import';
     btnImport.textContent = 'Import';
-    btnImport.addEventListener('click', () => importSingleUrl(url, btnImport));
+    btnImport.addEventListener('click', () => importSingleUrl(url, btnImport, idx));
 
     const btnRemove = document.createElement('button');
     btnRemove.className = 'btn-item-remove';
@@ -123,6 +125,31 @@ function renderDetectedUrls() {
     item.appendChild(text);
     item.appendChild(btnImport);
     item.appendChild(btnRemove);
+
+    // Metadata chip — only when we have page metadata (on a GitHub repo page)
+    if (pageMetadata) {
+      const chip = document.createElement('div');
+      chip.className = 'meta-chip';
+      if (pageMetadata.stars != null) {
+        chip.innerHTML += `<span class="stars">⭐ ${pageMetadata.stars.toLocaleString()}</span>`;
+      }
+      if (pageMetadata.language) {
+        chip.innerHTML += `<span class="lang">${pageMetadata.language}</span>`;
+      }
+      (pageMetadata.topics || []).slice(0, 3).forEach(t => {
+        chip.innerHTML += `<span class="topic">${t}</span>`;
+      });
+      if (chip.innerHTML) item.appendChild(chip);
+    }
+
+    // Per-URL tag input
+    const tagInput = document.createElement('input');
+    tagInput.className = 'tag-input';
+    tagInput.placeholder = 'tags (comma-separated)…';
+    tagInput.value = urlTags[idx] || '';
+    tagInput.addEventListener('input', () => { urlTags[idx] = tagInput.value; });
+    item.appendChild(tagInput);
+
     detectedListEl.appendChild(item);
   });
 }
@@ -133,24 +160,33 @@ function refreshDetectedUrls() {
   chrome.runtime.sendMessage({ type: 'GET_DETECTED_URLS' }, response => {
     if (chrome.runtime.lastError) return;
     detectedUrls = (response?.urls || []).filter(Boolean);
+    pageMetadata  = response?.metadata || null;
     renderDetectedUrls();
   });
 }
 
 // ─── Import helpers ───────────────────────────────────────────────────────────
 
-async function importSingleUrl(repoUrl, button) {
+async function importSingleUrl(repoUrl, button, idx) {
   const appUrl = await getAppUrl();
   const apiBase = appUrl.replace(/\/$/, '');
 
   if (button) button.disabled = true;
   btnManual.disabled = true;
 
+  const tags = typeof idx === 'number'
+    ? (urlTags[idx] || '').split(',').map(t => t.trim()).filter(Boolean)
+    : [];
+
+  const body = { url: repoUrl };
+  if (pageMetadata) body.metadata = pageMetadata;
+  if (tags.length > 0) body.tags = tags;
+
   try {
     const resp = await fetch(`${apiBase}/api/repositories/import-url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: repoUrl }),
+      body: JSON.stringify(body),
     });
 
     if (resp.ok) {
@@ -179,11 +215,18 @@ async function importAllDetected() {
   btnImportAll.disabled = true;
   btnImportAll.textContent = 'Importing…';
 
+  const entries = detectedUrls.map((url, idx) => {
+    const tags = (urlTags[idx] || '').split(',').map(t => t.trim()).filter(Boolean);
+    return tags.length > 0 ? { url, tags } : { url };
+  });
+  const bulkBody = { entries };
+  if (pageMetadata) bulkBody.metadata = pageMetadata;
+
   try {
     const resp = await fetch(`${apiBase}/api/repositories/bulk-import-urls`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls: detectedUrls }),
+      body: JSON.stringify(bulkBody),
     });
 
     if (resp.ok) {
@@ -217,14 +260,15 @@ function isGitHubRepo(url) {
   }
 }
 
-function extractGitHubBookmarks(nodes) {
+function extractGitHubBookmarks(nodes, folderPath = '') {
   const found = [];
   for (const node of nodes) {
     if (node.url && isGitHubRepo(node.url)) {
-      found.push({ id: node.id, url: node.url, title: node.title || '' });
+      found.push({ id: node.id, url: node.url, title: node.title || '', folder: folderPath });
     }
     if (node.children) {
-      found.push(...extractGitHubBookmarks(node.children));
+      const childPath = folderPath ? `${folderPath} / ${node.title || ''}` : (node.title || '');
+      found.push(...extractGitHubBookmarks(node.children, childPath));
     }
   }
   return found;
@@ -260,6 +304,7 @@ async function downloadBackupFile(bookmarks, apiBase) {
       url: normaliseGitHubUrl(bm.url) || bm.url,
       title: bm.title,
       original_bookmark_id: bm.id,
+      folder: bm.folder || '',
     })),
   };
 
