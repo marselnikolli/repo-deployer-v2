@@ -64,7 +64,6 @@ interface Repository {
   language?: string
   health_status?: string
   last_health_check?: string
-  last_metadata_sync?: string
 }
 
 export function RepositoryList() {
@@ -908,18 +907,6 @@ export function RepositoryList() {
                     </td>
                     <td className="px-4 py-3 min-w-[180px]">
                       <div className="flex flex-col gap-1.5">
-                        {/* Sync state */}
-                        {repo?.last_metadata_sync ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-teal-50 text-teal-700 rounded-[var(--radius-md)] w-fit">
-                            <RefreshCw className="size-3" />
-                            Synced
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-gray-100 text-gray-500 rounded-[var(--radius-md)] w-fit">
-                            <RefreshCw className="size-3" />
-                            Not synced
-                          </span>
-                        )}
                         {/* Cloning state */}
                         <div className="flex items-center gap-2">
                           {repo?.cloned && (

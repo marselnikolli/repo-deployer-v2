@@ -47,7 +47,6 @@ interface Repository {
   github_created_at?: string
   github_updated_at?: string
   github_pushed_at?: string
-  last_metadata_sync?: string
   health_status?: string
   last_health_check?: string
   zip_status?: string
@@ -117,7 +116,6 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
         topics: data.topics ?? prev.topics,
         category: data.category ?? prev.category,
         health_status: data.health_status ?? prev.health_status,
-        last_metadata_sync: data.last_metadata_sync ?? prev.last_metadata_sync,
       }))
 
       toast.success(data.message || 'Metadata synced')
@@ -308,10 +306,6 @@ export function RepositoryDetails({ repository, onClose, onUpdate }: RepositoryD
             <div>
               <h3 className="text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Added to DB</h3>
               <span className="text-sm text-[var(--color-fg-primary)]">{formatDate(repo.created_at)}</span>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Metadata Synced</h3>
-              <span className="text-sm text-[var(--color-fg-primary)]">{formatDate(repo.last_metadata_sync)}</span>
             </div>
           </div>
 

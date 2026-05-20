@@ -22,11 +22,8 @@ from services.bookmark_parser import parse_bookmarks, parse_html_bookmarks, filt
 from services.git_service import clone_repo, sync_repo, get_repo_info
 from services.clone_queue import clone_queue, CloneStatus
 from services.zip_queue import zip_queue
-from services.import_sync_service import sync_repositories_metadata, get_sync_progress, reset_sync_progress, pause_sync, resume_sync, stop_sync, sync_progress
-# from services.docker_service import deploy_to_docker
 from crud import repository as repo_crud
 from routes import auth, docker, deployment, analytics, notifications, search, import_routes, collection_routes, github_bookmarks
-from services.bookmark_scheduler import bookmark_scheduler
 
 
 def _repo_zip_path(repos_dir: str, repo_name: str) -> str:
@@ -121,15 +118,11 @@ async def lifespan(app: FastAPI):
     zip_queue.set_db_factory(SessionLocal)
     zip_queue.start()
     
-    # Start bookmark sync scheduler
-    bookmark_scheduler.start()
-    
     yield
     
     # Shutdown
     clone_queue.stop()
     zip_queue.stop()
-    bookmark_scheduler.stop()
 
 app = FastAPI(
     title="GitHub Repo Deployer API",
@@ -218,25 +211,10 @@ async def import_single_url(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Fire off background metadata sync + ZIP
+    # Enqueue ZIP archive in background
     repos_dir = os.getenv("REPOS_DIR", "/app/repos")
     zip_path = _repo_zip_path(repos_dir, full_name)
     zip_queue.enqueue(new_repo.id, norm, zip_path)
-
-    repo_id = new_repo.id
-
-    async def sync_task():
-        new_db = SessionLocal()
-        try:
-            fresh = new_db.query(Repository).filter(Repository.id == repo_id).first()
-            if fresh:
-                await sync_repositories_metadata([fresh], new_db, github_token=None)
-        except Exception as e:
-            logger.error(f"[EXTENSION IMPORT] Sync error: {e}")
-        finally:
-            new_db.close()
-
-    background_tasks.add_task(sync_task)
 
     return {"id": new_repo.id, "name": full_name, "url": norm, "category": category}
 
@@ -300,26 +278,12 @@ async def bulk_import_urls(
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Bulk insert failed: {e}")
 
-        # Enqueue ZIP + trigger metadata sync in background
+        # Enqueue ZIP archives in background
         repos_dir = os.getenv("REPOS_DIR", "/app/repos")
-        new_ids = [r.id for r in repos_to_add]
 
         for repo in repos_to_add:
             zip_path = _repo_zip_path(repos_dir, repo.name)
             zip_queue.enqueue(repo.id, repo.url, zip_path)
-
-        async def sync_task():
-            new_db = SessionLocal()
-            try:
-                fresh = new_db.query(Repository).filter(Repository.id.in_(new_ids)).all()
-                if fresh:
-                    await sync_repositories_metadata(fresh, new_db, github_token=None, batch_size=10, delay_between_batches=2.0)
-            except Exception as e:
-                logger.error(f"[BULK-IMPORT] Sync error: {e}")
-            finally:
-                new_db.close()
-
-        background_tasks.add_task(sync_task)
 
     return {"imported": imported, "skipped": skipped, "failed": failed, "total": len(payload.urls)}
 
@@ -445,50 +409,20 @@ async def import_from_html(
                 db.rollback()
                 logger.error(f"Failed to create repository {full_name}: {str(e)}")
         
-        # Trigger background metadata sync for newly imported repositories
+        # Enqueue ZIP archives in background
         if imported_repos:
             repos_dir = os.getenv("REPOS_DIR", "/app/repos")
-            logger.info(f"Triggering background stealth sync for {len(imported_repos)} repositories")
-            
-            # Convert ORM objects to dicts to avoid detached instance errors
-            repo_ids = [repo.id for repo in imported_repos]
 
-            # Enqueue ZIP jobs in parallel with sync — non-blocking
             for repo in imported_repos:
                 zip_path = _repo_zip_path(repos_dir, repo.name)
                 zip_queue.enqueue(repo.id, repo.url, zip_path)
-            
-            # Create a wrapper function that creates its own DB session for the background task
-            async def sync_task():
-                new_db = SessionLocal()
-                try:
-                    # Fetch fresh repository objects from the new DB session
-                    fresh_repos = new_db.query(Repository).filter(Repository.id.in_(repo_ids)).all()
-                    if fresh_repos:
-                        await sync_repositories_metadata(
-                            fresh_repos,
-                            new_db,
-                            github_token=None,
-                            batch_size=10,
-                            delay_between_batches=2.0
-                        )
-                except Exception as e:
-                    logger.error(f"Error in background sync task: {str(e)}")
-                    sync_progress.sync_error = f"Sync failed: {str(e)}"
-                    sync_progress.status = "failed"
-                finally:
-                    new_db.close()
-            
-            background_tasks.add_task(sync_task)
-        else:
-            logger.info("No new repositories to sync")
         
         return ImportResponse(
             total_found=len(github_urls),
             duplicates_in_file=duplicates_in_file,
             duplicates_in_db=duplicates_in_db,
             newly_imported=newly_imported,
-            message=f"Import complete: {newly_imported} repositories imported, {duplicates_in_db} already in database, {duplicates_in_file} duplicates in file. Metadata sync started in background."
+            message=f"Import complete: {newly_imported} repositories imported, {duplicates_in_db} already in database, {duplicates_in_file} duplicates in file."
         )
     
     except Exception as e:
@@ -598,53 +532,7 @@ async def save_bookmark_backup(payload: BookmarkBackupPayload):
         raise HTTPException(status_code=500, detail=f"Could not write backup: {e}")
 
 
-@app.get("/api/import/sync-progress")
-async def get_import_sync_progress():
-    """Get current metadata sync progress"""
-    progress_dict = get_sync_progress()
-    return {
-        "current": progress_dict.get("current", 0),
-        "total": progress_dict.get("total", 0),
-        "current_repo": progress_dict.get("current_repo", ""),
-        "elapsed_seconds": progress_dict.get("elapsed_seconds", 0),
-        "remaining_seconds": progress_dict.get("remaining_seconds", 0),
-        "success_count": progress_dict.get("success_count", 0),
-        "error_count": progress_dict.get("error_count", 0),
-        "is_running": progress_dict.get("status") == "scanning",
-        "percentage": progress_dict.get("percentage", 0),
-        "is_paused": progress_dict.get("is_paused", False),
-        "pause_reason": progress_dict.get("pause_reason"),
-        "resume_in_seconds": progress_dict.get("resume_in_seconds", 0),
-        "sync_error": progress_dict.get("sync_error"),
-    }
 
-
-@app.post("/api/import/sync-progress/reset")
-async def reset_import_sync_progress():
-    """Reset metadata sync progress tracker"""
-    reset_sync_progress()
-    return {"message": "Sync progress reset"}
-
-
-@app.post("/api/import/sync/pause")
-async def pause_import_sync():
-    """Pause the metadata sync process"""
-    pause_sync()
-    return {"message": "Sync paused"}
-
-
-@app.post("/api/import/sync/resume")
-async def resume_import_sync():
-    """Resume the metadata sync process"""
-    resume_sync()
-    return {"message": "Sync resumed"}
-
-
-@app.post("/api/import/sync/stop")
-async def stop_import_sync():
-    """Stop the metadata sync process"""
-    stop_sync()
-    return {"message": "Sync stopped"}
 
 
 @app.post("/api/import/folder", response_model=ImportResponse)
@@ -837,18 +725,6 @@ async def import_repository_url(
     )
     
     new_repo = repo_crud.create_repository(db, repo_data)
-    
-    # Trigger metadata sync in background (non-blocking)
-    import asyncio
-    try:
-        from services.import_sync_service import sync_repository_metadata
-        asyncio.create_task(sync_repository_metadata(
-            repo=new_repo,
-            db=db,
-            github_token=None
-        ))
-    except Exception as e:
-        print(f"[IMPORT-URL] Could not trigger background sync: {e}")
     
     return new_repo
 
@@ -1158,7 +1034,6 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                         repo_update.update({
                             "language": meta.get("language"),
                             "topics": meta.get("topics", "").split() if meta.get("topics") else [],
-                            "last_metadata_sync": datetime.utcnow()
                         })
                         
                         if meta.get("description") and (not repo.description or len(repo.description) < 50):
@@ -1549,7 +1424,6 @@ async def sync_repo_metadata_endpoint(
     repo.topics = meta.get("topics", "").split() if meta.get("topics") else []
     flag_modified(repo, "topics")
 
-    repo.last_metadata_sync = datetime.utcnow()
     repo.health_status = "healthy"
     repo.category = category
     repo.category_source = "stealth_fetch"
@@ -1559,7 +1433,6 @@ async def sync_repo_metadata_endpoint(
 
     db.commit()
 
-    # Return only plain serialisable data — never the ORM object itself
     return {
         "success": True,
         "message": f"Metadata synced for {repo.name}",
@@ -1567,7 +1440,6 @@ async def sync_repo_metadata_endpoint(
         "topics": repo.topics or [],
         "category": repo.category,
         "health_status": repo.health_status,
-        "last_metadata_sync": repo.last_metadata_sync.isoformat() if repo.last_metadata_sync else None,
     }
 
 

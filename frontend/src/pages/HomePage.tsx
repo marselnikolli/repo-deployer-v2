@@ -7,7 +7,6 @@ import { ImportBookmarks } from '@/components/ImportBookmarks'
 import { RepositoryList } from '@/components/RepositoryList'
 import { AddRepository } from '@/components/AddRepository'
 import { NotificationCenter } from '@/components/NotificationCenter'
-import { ImportProgressBar } from '@/components/ImportProgressBar'
 import { DeploymentPage } from '@/pages/DeploymentPage'
 import { useTheme } from '@/providers/theme-provider'
 import { useAuth } from '@/contexts/AuthContext'
@@ -172,7 +171,6 @@ export function HomePage() {
           </TabPanel>
         </main>
       </Tabs>
-      <ImportProgressBar />
     </div>
   )
 }

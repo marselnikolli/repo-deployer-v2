@@ -147,7 +147,6 @@ class RepositorySchema(RepositoryBase):
     github_created_at: Optional[datetime] = None
     github_updated_at: Optional[datetime] = None
     github_pushed_at: Optional[datetime] = None
-    last_metadata_sync: Optional[datetime] = None
     # Health
     health_status: str = "unknown"
     last_health_check: Optional[datetime] = None

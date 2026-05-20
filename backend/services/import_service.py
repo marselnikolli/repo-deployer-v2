@@ -641,7 +641,6 @@ class ImportService:
                         
                         repo.health_status = 'healthy' if not data.get('archived') else 'archived'
                         repo.last_health_check = datetime.utcnow()
-                        repo.last_metadata_sync = datetime.utcnow()
                         updated += 1
                     else:
                         # Other API errors, log but keep repository

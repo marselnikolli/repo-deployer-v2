@@ -60,9 +60,6 @@ export const repositoryApi = {
   checkDuplicate: (url: string) =>
     api.get(`/repositories/check-duplicate`, { params: { url } }),
 
-  syncMetadata: (id: number) =>
-    api.post(`/repositories/${id}/sync-metadata`),
-
   checkHealth: (id: number) =>
     api.post(`/repositories/${id}/check-health`),
 }

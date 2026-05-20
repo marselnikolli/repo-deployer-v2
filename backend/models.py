@@ -80,8 +80,6 @@ class Repository(Base):
     github_created_at = Column(DateTime, nullable=True)
     github_updated_at = Column(DateTime, nullable=True)
     github_pushed_at = Column(DateTime, nullable=True)
-    last_metadata_sync = Column(DateTime, nullable=True)
-
     # Health status
     health_status = Column(String(20), default="unknown", index=True)  # healthy, archived, not_found, unknown
     last_health_check = Column(DateTime, nullable=True, index=True)
