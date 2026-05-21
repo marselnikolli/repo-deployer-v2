@@ -150,6 +150,9 @@ class RepositorySchema(RepositoryBase):
     # Health
     health_status: str = "unknown"
     last_health_check: Optional[datetime] = None
+    # ZIP archive
+    zip_status: Optional[str] = None
+    zip_path: Optional[str] = None
     # Tags
     tags: List[TagSchema] = []
 

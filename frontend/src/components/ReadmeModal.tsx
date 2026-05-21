@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { X, ExternalLink, FileText, Loader2, AlertCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
+// Module-scoped cache: cleared on page reload, instant on re-open
+const readmeCache = new Map<string, string>()
+
 interface ReadmeModalProps {
   repoName: string
   repoUrl: string
@@ -19,11 +22,14 @@ function rawReadmeUrls(repoUrl: string): string[] {
 }
 
 export function ReadmeModal({ repoName, repoUrl, onClose }: ReadmeModalProps) {
-  const [content, setContent] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const cached = readmeCache.get(repoUrl)
+  const [content, setContent] = useState<string | null>(cached ?? null)
+  const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (readmeCache.has(repoUrl)) return  // already cached — skip fetch
+
     let cancelled = false
 
     async function fetchReadme() {
@@ -39,7 +45,10 @@ export function ReadmeModal({ repoName, repoUrl, onClose }: ReadmeModalProps) {
           const res = await fetch(url)
           if (res.ok) {
             const text = await res.text()
-            if (!cancelled) setContent(text)
+            if (!cancelled) {
+              readmeCache.set(repoUrl, text)
+              setContent(text)
+            }
             return
           }
         } catch {

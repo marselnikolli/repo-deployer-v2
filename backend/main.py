@@ -251,49 +251,6 @@ def get_db():
 
 # ============ IMPORT ENDPOINTS ============
 
-class SingleUrlImport(BaseModel):
-    url: str
-
-
-@app.post("/api/repositories/import-url")
-async def import_single_url(
-    payload: SingleUrlImport,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    """
-    Import a single GitHub repository URL (used by the browser extension).
-    Returns 409 if the repo is already in the database.
-    """
-    norm = normalize_github_url(payload.url)
-    if not norm:
-        raise HTTPException(status_code=400, detail="Not a valid GitHub repository URL")
-
-    existing = repo_crud.get_repo_by_url(db, norm)
-    if existing:
-        raise HTTPException(status_code=409, detail="Repository already exists")
-
-    url_parts = norm.rstrip('/').split('/')
-    repo_name = url_parts[-1]
-    owner = url_parts[-2] if len(url_parts) >= 2 else "unknown"
-    full_name = f"{owner}/{repo_name}"
-    category = categorize_url(norm, full_name)
-
-    repo_data = RepositoryCreate(name=full_name, url=norm, title=full_name, category=category)
-    try:
-        new_repo = repo_crud.create_repository(db, repo_data)
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-    # Enqueue ZIP archive in background
-    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
-    zip_path = _repo_zip_path(repos_dir, full_name)
-    zip_queue.enqueue(new_repo.id, norm, zip_path)
-
-    return {"id": new_repo.id, "name": full_name, "url": norm, "category": category}
-
-
 @app.post("/api/repositories/bulk-import-urls")
 @limiter.limit("10/minute")
 async def bulk_import_urls(
@@ -604,6 +561,45 @@ async def trigger_zip_sync(background_tasks: BackgroundTasks, db: Session = Depe
     return {"enqueued": enqueued_count, "total_without_zip": len(repos_without_zip)}
 
 
+@app.post("/api/admin/migrate-zip-paths")
+async def migrate_zip_paths(db: Session = Depends(get_db)):
+    """
+    One-time migration: fix repos whose zip_path points to the old flat
+    '{REPOS_DIR}/{owner}_{repo}.zip' format (pre-2026-05-07).
+    Moves the file if it exists at the old path, updates the DB row, and
+    re-enqueues any repo still missing an archive.
+    """
+    import shutil
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    repos = db.query(Repository).all()
+
+    moved, enqueued, already_ok = 0, 0, 0
+    for repo in repos:
+        correct_path = _repo_zip_path(repos_dir, repo.name)
+        if repo.zip_path == correct_path:
+            already_ok += 1
+            continue
+
+        # Check for file at old flat path: {repos_dir}/{owner}_{reponame}.zip
+        parts = repo.name.split("/", 1)
+        owner = parts[0] if len(parts) == 2 else "unknown"
+        name  = parts[1] if len(parts) == 2 else parts[0]
+        old_path = os.path.join(repos_dir, f"{owner}_{name}.zip")
+
+        if os.path.isfile(old_path):
+            os.makedirs(os.path.dirname(correct_path), exist_ok=True)
+            shutil.move(old_path, correct_path)
+            repo.zip_path   = correct_path
+            repo.zip_status = "done"
+            moved += 1
+        elif repo.zip_status in (None, "failed"):
+            zip_queue.enqueue(repo.id, repo.url, correct_path)
+            enqueued += 1
+
+    db.commit()
+    return {"already_ok": already_ok, "moved": moved, "enqueued": enqueued}
+
+
 @app.post("/api/bookmarks/save-backup")
 async def save_bookmark_backup(payload: BookmarkBackupPayload):
     """
@@ -906,6 +902,9 @@ async def import_repository_url(
         db.commit()
         db.refresh(new_repo)
 
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    zip_queue.enqueue(new_repo.id, new_repo.url, _repo_zip_path(repos_dir, f"{owner}/{repo_name}"))
+
     return new_repo
 
 
@@ -1001,10 +1000,24 @@ async def delete_repository(repo_id: int, db: Session = Depends(get_db)):
 async def get_repository_readme(repo_id: int, db: Session = Depends(get_db)):
     """Fetch README.md content for a repository from raw.githubusercontent.com"""
     import httpx
+    from services.github_service import GitHubService
 
     repo = repo_crud.get_repository(db, repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Serve from disk if the sync process already downloaded it
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    parts = repo.name.split("/", 1)
+    owner_part = parts[0] if len(parts) == 2 else "unknown"
+    name_part  = parts[1] if len(parts) == 2 else parts[0]
+    disk_readme = os.path.join(repos_dir, owner_part, name_part, "README.md")
+    if os.path.isfile(disk_readme):
+        try:
+            with open(disk_readme, "r", encoding="utf-8") as f:
+                return {"content": f.read(), "url": repo.url, "source": "disk"}
+        except OSError:
+            pass  # Fall through to network fetch
 
     parsed = GitHubService.parse_github_url(repo.url)
     if not parsed:
@@ -1210,17 +1223,17 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                 "status": "completed",
                 "current": len(repos),
                 "total": len(repos),
-                "healthy": healthy_count,
-                "archived": archived_count,
-                "not_found": not_found_count,
-                "errors": error_count,
-                "message": f"✓ Complete: {healthy_count} healthy, {archived_count} archived, {not_found_count} not found"
+                "healthy": counts["healthy"],
+                "archived": counts["archived"],
+                "not_found": counts["not_found"],
+                "errors": counts["errors"],
+                "message": f"✓ Complete: {counts['healthy']} healthy, {counts['archived']} archived, {counts['not_found']} not found"
             },
             ttl=3600
         )
-        
+
         logger.info(f"[HEALTH-CHECK-COMPLETE] Job {job_id} completed successfully")
-        logger.info(f"[HEALTH-CHECK-SUMMARY] Healthy: {healthy_count}, Archived: {archived_count}, Not Found: {not_found_count}, Errors: {error_count}")
+        logger.info(f"[HEALTH-CHECK-SUMMARY] Healthy: {counts['healthy']}, Archived: {counts['archived']}, Not Found: {counts['not_found']}, Errors: {counts['errors']}")
         db.close()
     except Exception as e:
         logger.error(f"[HEALTH-CHECK-ERROR] Job {job_id} failed with error: {str(e)}")
@@ -1537,6 +1550,7 @@ async def verify_token(authorization: Optional[str] = Header(None)):
 async def fetch_github_metadata(url: str = Query(..., description="GitHub repository URL")):
     """Fetch metadata for a repository URL via stealth HTML fetch (no GitHub API token required)"""
     from services.bookmark_parser import _stealth_fetch_github_meta, _score_text_for_category
+    from services.github_service import GitHubService
 
     parsed = GitHubService.parse_github_url(url)
     if not parsed:

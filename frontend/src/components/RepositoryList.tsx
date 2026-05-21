@@ -70,6 +70,7 @@ interface Repository {
   description?: string
   health_status?: string
   last_health_check?: string
+  zip_status?: string
 }
 
 interface CloneJob {
@@ -962,6 +963,20 @@ export function RepositoryList() {
                           <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded-[var(--radius-md)] w-fit">
                             <Server className="size-3" />
                             Deployed
+                          </span>
+                        )}
+                        {/* ZIP archive status */}
+                        {repo?.zip_status && repo.zip_status !== 'none' && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit ${
+                            repo.zip_status === 'done'        ? 'bg-blue-50 text-blue-700' :
+                            repo.zip_status === 'in_progress' ? 'bg-yellow-50 text-yellow-700' :
+                            repo.zip_status === 'failed'      ? 'bg-red-50 text-red-700' :
+                            'bg-gray-100 text-gray-500'
+                          }`}>
+                            <Download className="size-3" />
+                            {repo.zip_status === 'done' ? 'ZIP ready' :
+                             repo.zip_status === 'in_progress' ? 'Zipping…' :
+                             repo.zip_status === 'failed' ? 'ZIP failed' : repo.zip_status}
                           </span>
                         )}
                       </div>

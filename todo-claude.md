@@ -104,11 +104,11 @@ The second handler also calls `asyncio.create_task()` inside a route handler, wh
 
 | # | File | Task | Status |
 |---|------|------|--------|
-| 1 | `backend/services/import_sync_service.py` | Enqueue ZIP in sync loop for repos with `zip_status` None/failed | ❌ Open |
-| 2 | `backend/schemas.py` | Add `zip_status` and `zip_path` to `RepositorySchema` | ❌ Open |
-| 3 | `frontend/src/components/RepositoryList.tsx` | Show per-row ZIP status badge | ❌ Open |
-| 4 | `backend/main.py` | Remove duplicate `import-url` route | ❌ Open |
-| 5 | DB migration | Re-queue or update repos with stale `zip_path` from old flat format | ❌ Open |
+| 1 | `backend/services/import_sync_service.py` | Enqueue ZIP in sync loop for repos with `zip_status` None/failed | ✅ N/A — service removed; `/api/zip/sync` endpoint covers this |
+| 2 | `backend/schemas.py` | Add `zip_status` and `zip_path` to `RepositorySchema` | ✅ Done |
+| 3 | `frontend/src/components/RepositoryList.tsx` | Show per-row ZIP status badge | ✅ Done |
+| 4 | `backend/main.py` | Remove duplicate `import-url` route | ✅ Done |
+| 5 | `backend/main.py` | Re-queue or update repos with stale `zip_path` from old flat format | ✅ Done — `POST /api/admin/migrate-zip-paths` |
 
 ---
 

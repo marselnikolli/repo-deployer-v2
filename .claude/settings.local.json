@@ -19,7 +19,15 @@
       "Bash(docker-compose exec db psql:*)",
       "Bash(npm install *)",
       "Bash(cat /home/ozo/.npm/_logs/2026-05-06T21_45_14_765Z-eresolve-report.txt 2>/dev/null | head -30)",
-      "Read(//home/ozo/.npm/_logs/**)"
+      "Read(//home/ozo/.npm/_logs/**)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git -C /home/uzu/Desktop/devi/repo-deployer-v2 status)",
+      "Bash(git -C /home/uzu/Desktop/devi/repo-deployer-v2 diff --stat)",
+      "Bash(git *)",
+      "Bash(grep -E '\\\\.\\(github|proxmox|deployment|scripts\\)$|^\\\\.')",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(docker compose up *)"
     ]
   }
 }
