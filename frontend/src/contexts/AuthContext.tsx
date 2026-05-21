@@ -5,6 +5,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   username: string | null;
   token: string | null;
+  accessToken: string | null;
+  user: { email: string | null; name: string | null } | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
@@ -24,32 +26,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const savedToken = localStorage.getItem('auth_token');
       const savedUsername = localStorage.getItem('username');
 
-      console.log('AuthContext: Initializing auth', { 
-        hasToken: !!savedToken, 
-        hasUsername: !!savedUsername,
-        token: savedToken?.substring(0, 20)
-      });
-
       if (savedToken && savedUsername) {
         setToken(savedToken);
         setUsername(savedUsername);
-        
-        // Verify token is still valid before setting authenticated
+
         const valid = await verifyToken(savedToken);
         if (valid) {
-          console.log('AuthContext: Token is valid, setting authenticated');
           setIsAuthenticated(true);
         } else {
-          // Token is invalid, clear it
-          console.log('AuthContext: Token is invalid, clearing');
           localStorage.removeItem('auth_token');
           localStorage.removeItem('username');
           setIsAuthenticated(false);
           setToken(null);
           setUsername(null);
         }
-      } else {
-        console.log('AuthContext: No token found in localStorage');
       }
 
       setLoading(false);
@@ -81,14 +71,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const verifyToken = async (tk: string) => {
     try {
-      console.log('AuthContext: Verifying token...');
-      // If verify() succeeds, token is valid
-      const result = await api.verify(tk);
-      console.log('AuthContext: Token verified successfully', result);
+      await api.verify(tk);
       return true;
-    } catch (err) {
-      // If verify() fails (401 or other error), token is invalid
-      console.error('AuthContext: Token verification failed', err);
+    } catch {
       return false;
     }
   };
@@ -122,8 +107,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('username');
   };
 
+  const user = username ? { email: username, name: username } : null;
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, username, token, login, logout, loading }}>
+    <AuthContext.Provider value={{ isAuthenticated, username, token, accessToken: token, user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

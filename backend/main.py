@@ -1163,8 +1163,8 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                         repo_update["health_status"] = "not_found"
                         not_found_count += 1
                     
-                    time.sleep(STEALTH_DELAY)
-                
+                    await asyncio.sleep(STEALTH_DELAY)
+
                 except Exception as e:
                     logger.error(f"Error checking repository {repo.id}: {e}")
                     repo_update["health_status"] = "unknown"
@@ -1177,7 +1177,7 @@ async def perform_bulk_health_check(job_id: str, repository_ids: list):
                 chunk_num = (chunk_idx // CHUNK_SIZE) + 1
                 total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
                 logger.info(f"[HEALTH-CHECK-CHUNK] Completed chunk {chunk_num}/{total_chunks}, pausing {CHUNK_DELAY}s before next chunk")
-                time.sleep(CHUNK_DELAY)
+                await asyncio.sleep(CHUNK_DELAY)
         
         if repo_updates:
             db.bulk_update_mappings(Repository, repo_updates)

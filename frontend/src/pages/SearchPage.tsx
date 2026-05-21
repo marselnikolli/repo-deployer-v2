@@ -3,6 +3,7 @@ import { Search, Filter, ChevronLeft, ChevronRight, Star, Calendar, Code, Clock,
 import toast from 'react-hot-toast'
 import { SearchHistory } from '../components/SearchHistory'
 import { SavedSearches } from '../components/SavedSearches'
+import { useAuth } from '../contexts/AuthContext'
 
 interface Repository {
   id: number
@@ -39,6 +40,7 @@ interface FilterOptions {
 }
 
 export function SearchPage() {
+  const { username } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [results, setResults] = useState<Repository[]>([])
   const [totalResults, setTotalResults] = useState(0)
@@ -49,8 +51,8 @@ export function SearchPage() {
   const [showSearchHistory, setShowSearchHistory] = useState(false)
   const [showSavedSearches, setShowSavedSearches] = useState(false)
 
-  // Mock user ID (in real app, get from context/auth)
-  const userId = 1
+  // Derive a stable userId from the username string for search history
+  const userId = username ? username.split('').reduce((a, c) => a + c.charCodeAt(0), 0) : 1
 
   // Filter state
   const [filters, setFilters] = useState({

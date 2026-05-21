@@ -1,18 +1,21 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm install --legacy-peer-deps
+
+COPY . .
+RUN npm run build
+
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files (and lock file if it exists)
-COPY package.json package-lock.json ./
+RUN npm install -g serve
 
-# Install dependencies
-RUN npm install --legacy-peer-deps
+COPY --from=builder /app/dist ./dist
 
-# Copy source code
-COPY . .
-
-# Expose port
 EXPOSE 3000
 
-# Start dev server (build happens on first load)
-CMD ["npm", "run", "dev"]
+CMD ["serve", "-s", "dist", "-l", "3000"]

@@ -56,7 +56,7 @@ export function NotificationCenter() {
     try {
       const response = await fetch(`/api/notifications?user_id=${userId}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
       })
       if (response.ok) {
@@ -66,7 +66,7 @@ export function NotificationCenter() {
 
       const statsResponse = await fetch(`/api/notifications/stats?user_id=${userId}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
       })
       if (statsResponse.ok) {
@@ -86,7 +86,7 @@ export function NotificationCenter() {
       const response = await fetch(`/api/notifications/${id}/read?user_id=${userId}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
       })
       if (response.ok) {
@@ -106,7 +106,7 @@ export function NotificationCenter() {
       const response = await fetch(`/api/notifications/read-all?user_id=${userId}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
       })
       if (response.ok) {
@@ -126,7 +126,7 @@ export function NotificationCenter() {
       const response = await fetch(`/api/notifications/${id}?user_id=${userId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
       })
       if (response.ok) {
@@ -146,7 +146,7 @@ export function NotificationCenter() {
       const response = await fetch(`/api/notifications/clear?user_id=${userId}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
       })
       if (response.ok) {

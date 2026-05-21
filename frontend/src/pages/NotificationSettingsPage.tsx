@@ -49,7 +49,7 @@ export function NotificationSettingsPage() {
     try {
       const response = await fetch('/api/user/notification-settings', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
       })
       if (response.ok) {
@@ -68,7 +68,7 @@ export function NotificationSettingsPage() {
       const response = await fetch('/api/user/notification-settings', {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ settings, webhooks })
@@ -104,7 +104,7 @@ export function NotificationSettingsPage() {
       const response = await fetch(`/api/notifications/test/${channel}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

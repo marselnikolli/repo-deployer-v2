@@ -166,7 +166,7 @@ export function RepositoryList() {
   // Poll for import jobs
   useEffect(() => {
     // Only start polling if we have authentication
-    const token = localStorage.getItem('token')
+    const token = localStorage.getItem('auth_token')
     if (!token) {
       return
     }
