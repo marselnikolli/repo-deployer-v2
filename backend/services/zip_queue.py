@@ -68,7 +68,8 @@ class ZipQueue:
         self._worker_task: Optional[asyncio.Task] = None
         self._db_session_factory = None
         self._redis = None
-        self.on_job_update = None            # optional async callable(repo_id, status)
+        self.on_job_update = None            # optional callable(repo_id, status)
+        self.on_progress_update = None       # optional callable(repo_id, downloaded, total)
 
     def _get_redis(self):
         if self._redis is not None:
@@ -196,11 +197,19 @@ class ZipQueue:
         job.started_at = datetime.utcnow()
         logger.info(f"[ZIP] Starting {job.repo_id} → {job.zip_path}")
 
+        def _progress(downloaded: int, total: int):
+            job.bytes_downloaded = downloaded
+            job.bytes_total = total
+            if self.on_progress_update:
+                try:
+                    self.on_progress_update(job.repo_id, downloaded, total)
+                except Exception:
+                    pass
+
         try:
-            # Run the blocking download in a thread pool so the event loop stays free
             loop = asyncio.get_event_loop()
             success = await loop.run_in_executor(
-                None, _download_zip, job.repo_url, job.zip_path
+                None, _download_zip, job.repo_url, job.zip_path, _progress
             )
             if success:
                 job.status = _STATUS_DONE
@@ -238,10 +247,10 @@ class ZipQueue:
                 logger.error(f"[ZIP] Could not persist status for repo {job.repo_id}: {exc}")
 
 
-def _download_zip(repo_url: str, zip_path: str) -> bool:
+def _download_zip(repo_url: str, zip_path: str, progress_callback=None) -> bool:
     """Synchronous wrapper — runs in a thread-pool executor."""
     from services.git_service import download_repo_as_zip
-    return download_repo_as_zip(repo_url, zip_path)
+    return download_repo_as_zip(repo_url, zip_path, progress_callback=progress_callback)
 
 
 # Singleton — import and use this everywhere

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { X, ExternalLink, FileText, Loader2, AlertCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 
 // Module-scoped cache: cleared on page reload, instant on re-open
 const readmeCache = new Map<string, string>()
@@ -12,7 +14,6 @@ interface ReadmeModalProps {
 }
 
 function rawReadmeUrls(repoUrl: string): string[] {
-  // github.com/owner/repo → raw.githubusercontent.com/owner/repo/{branch}/README.md
   const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/)
   if (!match) return []
   const [, owner, repo] = match
@@ -21,11 +22,28 @@ function rawReadmeUrls(repoUrl: string): string[] {
   )
 }
 
+/** Base URL for resolving relative image/link paths in the README */
+function rawBaseUrl(repoUrl: string): string {
+  const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/)
+  if (!match) return ''
+  const [, owner, repo] = match
+  return `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/`
+}
+
+function resolveUrl(src: string, base: string): string {
+  if (!src) return src
+  if (src.startsWith('http://') || src.startsWith('https://')) return src
+  if (src.startsWith('//')) return `https:${src}`
+  if (src.startsWith('/')) return `https://raw.githubusercontent.com${src}`
+  return base + src.replace(/^\.\//, '')
+}
+
 export function ReadmeModal({ repoName, repoUrl, onClose }: ReadmeModalProps) {
   const cached = readmeCache.get(repoUrl)
   const [content, setContent] = useState<string | null>(cached ?? null)
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState<string | null>(null)
+  const base = rawBaseUrl(repoUrl)
 
   useEffect(() => {
     if (readmeCache.has(repoUrl)) return  // already cached — skip fetch
@@ -138,7 +156,33 @@ export function ReadmeModal({ repoName, repoUrl, onClose }: ReadmeModalProps) {
               prose-th:bg-[var(--color-bg-secondary)] prose-th:px-3 prose-th:py-2
               prose-td:px-3 prose-td:py-2
             ">
-              <ReactMarkdown>{content}</ReactMarkdown>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
+                components={{
+                  img: ({ src, alt, ...props }) => (
+                    <img
+                      {...props}
+                      src={resolveUrl(src ?? '', base)}
+                      alt={alt ?? ''}
+                      className="rounded-lg max-w-full"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  ),
+                  a: ({ href, children, ...props }) => (
+                    <a
+                      {...props}
+                      href={resolveUrl(href ?? '', base)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {content}
+              </ReactMarkdown>
             </div>
           )}
         </div>

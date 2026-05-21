@@ -48,6 +48,21 @@ services:
           memory: 512M
     command: redis-server --appendonly yes
 
+  # Nginx reverse proxy — routes /api/* → backend, everything else → frontend
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: repo-deployer-nginx-app
+    ports:
+      - "8088:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - frontend
+    networks:
+      - repo-deployer-network
+    restart: unless-stopped
+
   # FastAPI Backend
   api:
     build:
@@ -86,12 +101,12 @@ services:
       - repo-deployer-network
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  # React Frontend
+  # React Frontend — runs Vite dev server with hot reload + built-in /api proxy
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: node:20-alpine
     container_name: repo-deployer-frontend
+    working_dir: /app
+    command: sh -c "npm install --legacy-peer-deps && npm run dev"
     ports:
       - "3000:3000"
     depends_on:
@@ -103,12 +118,10 @@ services:
       resources:
         limits:
           cpus: '1'
-          memory: 512M
+          memory: 1G
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      REACT_APP_API_URL: http://localhost:8001
 
 volumes:
   postgres_data:

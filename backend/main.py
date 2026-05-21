@@ -193,6 +193,10 @@ async def lifespan(app: FastAPI):
     zip_queue.on_job_update = lambda repo_id, status: asyncio.ensure_future(
         ws_manager.broadcast("zip_job_update", {"repo_id": repo_id, "status": status})
     )
+    zip_queue.on_progress_update = lambda repo_id, downloaded, total: ws_broadcast_sync(
+        "zip_progress", {"repo_id": repo_id, "downloaded": downloaded, "total": total,
+                         "pct": min(100, int(downloaded / total * 100)) if total else 0}
+    )
     zip_queue.start()
     
     yield
@@ -571,6 +575,21 @@ async def get_zip_status(repo_id: int, db: Session = Depends(get_db)):
             db.commit()
 
     return {"repo_id": repo_id, "status": repo.zip_status or "none", "zip_path": repo.zip_path}
+
+
+@app.get("/api/repositories/{repo_id}/zip/progress")
+async def get_zip_progress(repo_id: int):
+    """Live download progress for a ZIP job currently in the queue."""
+    job = zip_queue.get_status(repo_id)
+    if not job:
+        return {"repo_id": repo_id, "pct": 0, "downloaded": 0, "total": 0, "status": "none"}
+    return {
+        "repo_id": repo_id,
+        "pct": job.get("progress_pct", 0),
+        "downloaded": job.get("bytes_downloaded", 0),
+        "total": job.get("bytes_total", 0),
+        "status": job.get("status"),
+    }
 
 
 @app.get("/api/zip/statuses")
@@ -1112,6 +1131,67 @@ async def bulk_update_category(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/bulk/delete-clones")
+async def bulk_delete_clones(action: BulkActionRequest, db: Session = Depends(get_db)):
+    """Delete local git clones for a set of repositories and reset their cloned status."""
+    import shutil
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    deleted, skipped = 0, 0
+    for repo in db.query(Repository).filter(Repository.id.in_(action.repository_ids)).all():
+        if not repo.cloned:
+            skipped += 1
+            continue
+        parts = repo.name.split("/", 1)
+        owner = parts[0] if len(parts) == 2 else "unknown"
+        name  = parts[1] if len(parts) == 2 else parts[0]
+        clone_path = os.path.join(repos_dir, owner, name)
+        if os.path.isdir(clone_path):
+            try:
+                shutil.rmtree(clone_path)
+            except Exception:
+                skipped += 1
+                continue
+        repo.cloned = False
+        repo.path = None
+        deleted += 1
+    db.commit()
+    return {"deleted": deleted, "skipped": skipped}
+
+
+@app.post("/api/bulk/enqueue-zips")
+async def bulk_enqueue_zips(action: BulkActionRequest, db: Session = Depends(get_db)):
+    """Enqueue ZIP creation for repositories that don't have an archive yet."""
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    enqueued, skipped = 0, 0
+    for repo in db.query(Repository).filter(Repository.id.in_(action.repository_ids)).all():
+        zip_path = _repo_zip_path(repos_dir, repo.name)
+        if zip_queue.enqueue(repo.id, repo.url, zip_path):
+            enqueued += 1
+        else:
+            skipped += 1
+    return {"enqueued": enqueued, "skipped": skipped}
+
+
+@app.post("/api/bulk/delete-zips")
+async def bulk_delete_zips(action: BulkActionRequest, db: Session = Depends(get_db)):
+    """Delete ZIP archive files for a set of repositories."""
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    deleted, skipped = 0, 0
+    for repo in db.query(Repository).filter(Repository.id.in_(action.repository_ids)).all():
+        zip_path = repo.zip_path or _repo_zip_path(repos_dir, repo.name)
+        if os.path.isfile(zip_path):
+            try:
+                os.remove(zip_path)
+            except Exception:
+                skipped += 1
+                continue
+        repo.zip_status = None
+        repo.zip_path = None
+        deleted += 1
+    db.commit()
+    return {"deleted": deleted, "skipped": skipped}
+
+
 @app.post("/api/bulk/delete")
 async def bulk_delete(
     action: BulkActionRequest,
@@ -1306,6 +1386,37 @@ async def sync_repository(
     
     background_tasks.add_task(sync_repo, repo.path, repo.url)
     return {"message": f"Syncing {repo.name}..."}
+
+
+@app.delete("/api/repositories/{repo_id}/clone")
+async def delete_clone(repo_id: int, db: Session = Depends(get_db)):
+    """Delete the local git clone for a repository and reset its cloned status."""
+    import shutil
+
+    repo = repo_crud.get_repository(db, repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    if not repo.cloned:
+        raise HTTPException(status_code=400, detail="Repository is not cloned")
+
+    repos_dir = os.getenv("REPOS_DIR", "/app/repos")
+    parts = repo.name.split("/", 1)
+    owner = parts[0] if len(parts) == 2 else "unknown"
+    name  = parts[1] if len(parts) == 2 else parts[0]
+    clone_path = os.path.join(repos_dir, owner, name)
+
+    if os.path.isdir(clone_path):
+        try:
+            shutil.rmtree(clone_path)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete clone directory: {e}")
+
+    repo.cloned = False
+    repo.path = None
+    db.commit()
+
+    return {"message": f"Clone deleted for {repo.name}"}
 
 
 @app.post("/api/repositories/{repo_id}/clone")

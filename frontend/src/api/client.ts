@@ -69,6 +69,9 @@ export const repositoryApi = {
   enqueueZip: (id: number) =>
     api.post(`/repositories/${id}/zip`),
 
+  deleteClone: (id: number) =>
+    api.delete(`/repositories/${id}/clone`),
+
   sync: (id: number) =>
     api.post(`/repositories/${id}/sync`),
 
@@ -146,6 +149,15 @@ export const bulkApi = {
   
   healthCheck: (ids: number[]) =>
     api.post('/bulk/health-check', { repository_ids: ids }),
+
+  deleteClones: (ids: number[]) =>
+    api.post('/bulk/delete-clones', { repository_ids: ids }),
+
+  enqueueZips: (ids: number[]) =>
+    api.post('/bulk/enqueue-zips', { repository_ids: ids }),
+
+  deleteZips: (ids: number[]) =>
+    api.post('/bulk/delete-zips', { repository_ids: ids }),
 }
 
 // General endpoints

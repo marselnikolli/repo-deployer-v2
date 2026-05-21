@@ -145,7 +145,7 @@ export function RepositoryList() {
   const qc = useQueryClient()
 
   // WebSocket pushes invalidations; polling is the fallback when WS is down
-  const { isConnected: wsConnected } = useJobWebSocket()
+  const { isConnected: wsConnected, zipProgress } = useJobWebSocket()
 
   // Clone jobs — WS pushes updates; fallback poll only while actively cloning
   const { data: cloneJobsData } = useQuery({
@@ -320,6 +320,18 @@ export function RepositoryList() {
     }
   }
 
+  const handleDeleteClone = async (e: React.MouseEvent, repoId: number, repoName: string) => {
+    e.stopPropagation()
+    if (!window.confirm(`Delete local clone of "${repoName}"? The repo stays in your library.`)) return
+    try {
+      await repositoryApi.deleteClone(repoId)
+      toast.success(`Clone of ${repoName} deleted`)
+      qc.invalidateQueries({ queryKey: ['repositories'] })
+    } catch {
+      toast.error('Failed to delete clone')
+    }
+  }
+
   const handleEnqueueZip = async (e: React.MouseEvent, repoId: number) => {
     e.stopPropagation()
     try {
@@ -351,6 +363,58 @@ export function RepositoryList() {
     } catch {
       toast.error('Failed to download ZIP')
     }
+  }
+
+  const handleBulkDeleteClones = async () => {
+    const ids = repositories.filter(r => selectedIds.has(r.id) && r.cloned).map(r => r.id)
+    if (ids.length === 0) { toast.error('No cloned repos selected'); return }
+    if (!window.confirm(`Delete local clones for ${ids.length} repositories?`)) return
+    try {
+      const res = await bulkApi.deleteClones(ids)
+      toast.success(`Deleted ${res.data.deleted} clones`)
+      qc.invalidateQueries({ queryKey: ['repositories'] })
+      clearSelection()
+    } catch { toast.error('Failed to delete clones') }
+  }
+
+  const handleBulkGetZips = async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    try {
+      const res = await bulkApi.enqueueZips(ids)
+      toast.success(`Queued ${res.data.enqueued} ZIP jobs`)
+      qc.invalidateQueries({ queryKey: ['repositories'] })
+    } catch { toast.error('Failed to queue ZIPs') }
+  }
+
+  const handleBulkDownloadZips = async () => {
+    const ready = repositories.filter(r => selectedIds.has(r.id) && r.zip_status === 'done')
+    if (ready.length === 0) { toast.error('No selected repos have a ready ZIP'); return }
+    toast.success(`Downloading ${ready.length} ZIP files…`)
+    for (const repo of ready) {
+      const res = await fetch(`/api/repositories/${repo.id}/zip/download`)
+      if (!res.ok) continue
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${repo.name.split('/').pop()}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+      await new Promise(r => setTimeout(r, 400))  // brief pause between downloads
+    }
+  }
+
+  const handleBulkDeleteZips = async () => {
+    const ids = repositories.filter(r => selectedIds.has(r.id) && r.zip_status).map(r => r.id)
+    if (ids.length === 0) { toast.error('No selected repos have a ZIP'); return }
+    if (!window.confirm(`Delete ZIP files for ${ids.length} repositories?`)) return
+    try {
+      const res = await bulkApi.deleteZips(ids)
+      toast.success(`Deleted ${res.data.deleted} ZIP files`)
+      qc.invalidateQueries({ queryKey: ['repositories'] })
+      clearSelection()
+    } catch { toast.error('Failed to delete ZIPs') }
   }
 
   const handleBulkClone = async () => {
@@ -785,6 +849,34 @@ export function RepositoryList() {
                 : 'Sync Metadata'}
             </button>
             <button
+              onClick={handleBulkDeleteClones}
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-orange-700 bg-orange-50 border border-orange-300 rounded-[var(--radius-md)] hover:bg-orange-100 transition-colors"
+            >
+              <GitBranch className="size-4 inline mr-1" />
+              Delete clone
+            </button>
+            <button
+              onClick={handleBulkGetZips}
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-blue-700 bg-blue-50 border border-blue-300 rounded-[var(--radius-md)] hover:bg-blue-100 transition-colors"
+            >
+              <Download className="size-4 inline mr-1" />
+              Get ZIP
+            </button>
+            <button
+              onClick={handleBulkDownloadZips}
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-blue-700 bg-blue-50 border border-blue-300 rounded-[var(--radius-md)] hover:bg-blue-100 transition-colors"
+            >
+              <Download className="size-4 inline mr-1" />
+              Download ZIP
+            </button>
+            <button
+              onClick={handleBulkDeleteZips}
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-orange-700 bg-orange-50 border border-orange-300 rounded-[var(--radius-md)] hover:bg-orange-100 transition-colors"
+            >
+              <Trash2 className="size-4 inline mr-1" />
+              Delete ZIP
+            </button>
+            <button
               onClick={handleBulkDelete}
               className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-error-700)] dark:text-[var(--color-error-400)] bg-[var(--color-error-50)] dark:bg-[var(--color-error-900)] border border-[var(--color-error-300)] dark:border-[var(--color-error-700)] rounded-[var(--radius-md)] hover:bg-[var(--color-error-100)] dark:hover:bg-[var(--color-error-800)] transition-colors"
             >
@@ -967,13 +1059,22 @@ export function RepositoryList() {
                       <div className="flex flex-col gap-1.5">
                         {/* Cloning state */}
                         <div className="flex items-center gap-2">
-                          {repo?.cloned && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
-                              <CheckCircle className="size-3" />
-                              Cloned
-                            </span>
-                          )}
-                          {!repo.cloned && (
+                          {repo?.cloned ? (
+                            <>
+                              <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
+                                <CheckCircle className="size-3" />
+                                Cloned
+                              </span>
+                              <button
+                                onClick={(e) => handleDeleteClone(e, repo.id, repo.name)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-red-50 text-red-600 hover:bg-red-100 rounded-[var(--radius-md)] transition-colors"
+                                title="Delete local clone"
+                              >
+                                <Trash2 className="size-3" />
+                                Delete clone
+                              </button>
+                            </>
+                          ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-gray-100 text-gray-600 rounded-[var(--radius-md)]">
                               Not cloned
                             </span>
@@ -1009,10 +1110,26 @@ export function RepositoryList() {
                             Download ZIP
                           </button>
                         ) : repo?.zip_status === 'in_progress' || repo?.zip_status === 'pending' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-yellow-50 text-yellow-700">
-                            <Loader2 className="size-3 animate-spin" />
-                            Zipping…
-                          </span>
+                          <div className="flex flex-col gap-1 w-full max-w-[160px]">
+                            <span className="inline-flex items-center gap-1 text-[length:var(--text-xs)] font-medium text-yellow-700">
+                              <Loader2 className="size-3 animate-spin" />
+                              {zipProgress[repo.id]
+                                ? `Zipping… ${zipProgress[repo.id].pct}%`
+                                : 'Zipping…'}
+                            </span>
+                            <div className="w-full h-1.5 bg-yellow-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-yellow-400 rounded-full transition-all duration-300"
+                                style={{ width: `${zipProgress[repo.id]?.pct ?? 0}%` }}
+                              />
+                            </div>
+                            {zipProgress[repo.id]?.total > 0 && (
+                              <span className="text-[10px] text-[var(--color-fg-quaternary)]">
+                                {(zipProgress[repo.id].downloaded / 1024 / 1024).toFixed(1)} /
+                                {(zipProgress[repo.id].total / 1024 / 1024).toFixed(1)} MB
+                              </span>
+                            )}
+                          </div>
                         ) : repo?.zip_status === 'failed' ? (
                           <button
                             onClick={(e) => handleEnqueueZip(e, repo.id)}
