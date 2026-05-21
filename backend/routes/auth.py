@@ -41,27 +41,19 @@ def get_db():
 
 def extract_token_from_header(authorization: Optional[str] = Header(None)) -> str:
     """Extract and validate JWT token from Authorization header"""
-    print(f"DEBUG extract_token_from_header: authorization = '{authorization}'")
-    
     if not authorization:
-        print(f"ERROR: Missing Authorization header")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing Authorization header"
         )
-    
-    # Expected format: "Bearer <token>"
+
     parts = authorization.split()
-    print(f"DEBUG extract_token_from_header: parts = {[p[:20] if len(p) > 20 else p for p in parts]}")
-    
     if len(parts) != 2 or parts[0].lower() != "bearer":
-        print(f"ERROR: Invalid Authorization header format. Expected 'Bearer <token>', got '{authorization[:50]}'")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Authorization header format. Expected: Bearer <token>"
         )
-    
-    print(f"SUCCESS: Extracted token = {parts[1][:20]}...")
+
     return parts[1]
 
 
@@ -70,32 +62,22 @@ def get_current_user(
     db: Session = Depends(get_db)
 ):
     """Get current authenticated user from Authorization header"""
-    print(f"DEBUG get_current_user: authorization header = {authorization}")
-    
     token = extract_token_from_header(authorization)
-    print(f"DEBUG get_current_user: extracted token = {token[:20]}...")
-    
     user_id = decode_access_token(token)
-    print(f"DEBUG get_current_user: decoded user_id = {user_id}")
-    
+
     if not user_id:
-        print(f"ERROR: Could not decode user_id from token")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
         )
-    
+
     user = get_user_by_id(db, user_id)
-    print(f"DEBUG get_current_user: user lookup result = {user}")
-    
     if not user or not user.is_active:
-        print(f"ERROR: User not found or inactive")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive"
         )
-    
-    print(f"SUCCESS: Returning user {user.id} ({user.email})")
+
     return user
 
 
@@ -179,8 +161,6 @@ def verify_token(
     current_user = Depends(get_current_user)
 ):
     """Verify JWT token and return current user info"""
-    print(f"✓ /verify endpoint called successfully")
-    print(f"  Current user ID: {current_user.id}, Email: {current_user.email}")
     return current_user
 
 

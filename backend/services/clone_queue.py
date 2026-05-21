@@ -1,16 +1,17 @@
 """Clone queue service for batch repository cloning"""
 
 import time
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import List, Optional, Dict, Callable
-from enum import Enum
-import threading
-from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
+import json
 import os
 import logging
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from queue import Queue
+from typing import List, Optional, Dict, Callable
 
 # Configure logging to output to stdout
 logger = logging.getLogger(__name__)
@@ -75,15 +76,103 @@ class CloneQueueService:
         self.executor: Optional[ThreadPoolExecutor] = None
         self.on_job_update: Optional[Callable[[CloneJob], None]] = None
         self.db_session_factory: Optional[Callable] = None
-        self.zip_queue: Optional[object] = None  # Reference to ZipQueue (set later to avoid circular imports)
+        self.zip_queue: Optional[object] = None
+        self._redis = None
         self._initialized = True
 
+    def _get_redis(self):
+        """Lazy-init sync Redis client. Returns None if Redis is unavailable."""
+        if self._redis is not None:
+            return self._redis
+        try:
+            import redis as redis_module
+            url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            self._redis = redis_module.from_url(url, decode_responses=True, socket_connect_timeout=2)
+            self._redis.ping()
+        except Exception as e:
+            logger.warning(f"[CLONE-QUEUE] Redis unavailable, jobs won't persist across restarts: {e}")
+            self._redis = None
+        return self._redis
+
+    def _redis_save_job(self, job: CloneJob):
+        r = self._get_redis()
+        if not r:
+            return
+        try:
+            r.hset(f"clone:job:{job.id}", mapping={
+                "id": job.id,
+                "repository_id": job.repository_id,
+                "repository_name": job.repository_name,
+                "repository_url": job.repository_url,
+                "target_path": job.target_path,
+                "status": job.status.value,
+                "created_at": job.created_at.isoformat(),
+            })
+        except Exception as e:
+            logger.warning(f"[CLONE-QUEUE] Redis write failed: {e}")
+
+    def _redis_update_status(self, job_id: int, status: str):
+        r = self._get_redis()
+        if not r:
+            return
+        try:
+            r.hset(f"clone:job:{job_id}", "status", status)
+            if status in (CloneStatus.COMPLETED.value, CloneStatus.FAILED.value, CloneStatus.CANCELLED.value):
+                r.expire(f"clone:job:{job_id}", 86400)  # keep for 24h then auto-expire
+        except Exception as e:
+            logger.warning(f"[CLONE-QUEUE] Redis status update failed: {e}")
+
+    def _redis_next_id(self) -> int:
+        """Get next job ID from Redis counter (thread-safe INCR)."""
+        r = self._get_redis()
+        if r:
+            try:
+                return int(r.incr("clone:counter"))
+            except Exception:
+                pass
+        # Fallback to in-memory counter
+        self.job_counter += 1
+        return self.job_counter
+
+    def _reload_from_redis(self):
+        """On startup, restore any pending/in_progress jobs from Redis."""
+        r = self._get_redis()
+        if not r:
+            return
+        try:
+            keys = r.keys("clone:job:*")
+            restored = 0
+            for key in keys:
+                data = r.hgetall(key)
+                if not data or data.get("status") not in (CloneStatus.PENDING.value, CloneStatus.IN_PROGRESS.value):
+                    continue
+                job = CloneJob(
+                    id=int(data["id"]),
+                    repository_id=int(data["repository_id"]),
+                    repository_name=data["repository_name"],
+                    repository_url=data["repository_url"],
+                    target_path=data["target_path"],
+                    status=CloneStatus.PENDING,  # reset in_progress → pending
+                )
+                self.jobs[job.id] = job
+                self.queue.put(job.id)
+                restored += 1
+            if restored:
+                logger.info(f"[CLONE-QUEUE] Restored {restored} pending jobs from Redis")
+            # Sync counter
+            counter_val = r.get("clone:counter")
+            if counter_val:
+                self.job_counter = int(counter_val)
+        except Exception as e:
+            logger.warning(f"[CLONE-QUEUE] Redis reload failed: {e}")
+
     def start(self):
-        """Start the clone queue worker"""
+        """Start the clone queue worker, restoring any persisted pending jobs."""
         if self.is_running:
             logger.info("Clone queue already running")
             return
 
+        self._reload_from_redis()
         self.is_running = True
         self.executor = ThreadPoolExecutor(max_workers=self.max_concurrent)
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=False)
@@ -104,15 +193,15 @@ class CloneQueueService:
 
     def add_job(self, repository_id: int, name: str, url: str, target_path: str) -> CloneJob:
         """Add a new clone job to the queue"""
-        self.job_counter += 1
         job = CloneJob(
-            id=self.job_counter,
+            id=self._redis_next_id(),
             repository_id=repository_id,
             repository_name=name,
             repository_url=url,
-            target_path=target_path
+            target_path=target_path,
         )
         self.jobs[job.id] = job
+        self._redis_save_job(job)
         self.queue.put(job.id)
         return job
 
@@ -229,8 +318,6 @@ class CloneQueueService:
                 job.progress = 100
                 logger.info(f"Clone completed for job {job.id}: {job.repository_name}")
                 self._update_repository_cloned_status(job.repository_id, job.target_path)
-                
-                # Automatically enqueue ZIP job after successful clone
                 self._enqueue_zip_for_repo(job.repository_id, job.repository_url, job.repository_name)
             else:
                 job.status = CloneStatus.FAILED
@@ -244,6 +331,7 @@ class CloneQueueService:
 
         finally:
             job.completed_at = datetime.utcnow()
+            self._redis_update_status(job.id, job.status.value)
             with self._active_lock:
                 self.active_jobs -= 1
             if self.on_job_update:
@@ -276,6 +364,7 @@ class CloneQueueService:
                     self.active_jobs += 1
                 job.status = CloneStatus.IN_PROGRESS
                 job.started_at = datetime.utcnow()
+                self._redis_update_status(job.id, CloneStatus.IN_PROGRESS.value)
                 logger.info(f"Dispatching clone job {job.id}: {job.repository_name}")
 
                 if self.on_job_update:

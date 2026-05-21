@@ -3,9 +3,12 @@ FastAPI Backend for GitHub Repo Deployer
 RESTful API for managing GitHub repository imports and deployments
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Query, BackgroundTasks, Header
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Query, BackgroundTasks, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -141,6 +144,8 @@ async def lifespan(app: FastAPI):
     clone_queue.stop()
     zip_queue.stop()
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="GitHub Repo Deployer API",
     description="Professional API for managing and deploying GitHub repositories",
@@ -150,6 +155,9 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
     redoc_url="/api/redoc",
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS Configuration
 app.add_middleware(
@@ -237,7 +245,9 @@ async def import_single_url(
 
 
 @app.post("/api/repositories/bulk-import-urls")
+@limiter.limit("10/minute")
 async def bulk_import_urls(
+    request: Request,
     payload: BulkImportUrlsRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -718,7 +728,9 @@ async def create_repository(
 
 
 @app.post("/api/repositories/import-url", response_model=RepositorySchema)
+@limiter.limit("30/minute")
 async def import_repository_url(
+    request: Request,
     body: ImportUrlRequest,
     db: Session = Depends(get_db)
 ):
@@ -1009,7 +1021,9 @@ async def bulk_delete(
 
 
 @app.post("/api/bulk/health-check")
+@limiter.limit("5/minute")
 async def bulk_health_check(
+    request: Request,
     action: BulkActionRequest,
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
@@ -1069,115 +1083,71 @@ async def get_health_check_progress(job_id: str):
 
 
 async def perform_bulk_health_check(job_id: str, repository_ids: list):
-    """Background task to perform health check using stealth HTML fetching"""
+    """Background task: concurrent health checks with semaphore-bounded parallelism."""
     try:
         import re
-        import time
         from datetime import datetime
         from services.cache_service import CacheService
         from database import SessionLocal
         from services.bookmark_parser import _stealth_fetch_github_meta
-        
-        logger.info(f"[HEALTH-CHECK-TASK] Starting background task for job {job_id}")
-        logger.info(f"[HEALTH-CHECK-TASK] Requested repository IDs: {len(repository_ids)}")
-        
-        db = SessionLocal()
-        
-        repos = db.query(Repository).filter(Repository.id.in_(repository_ids)).all()
-        logger.info(f"[HEALTH-CHECK-TASK] Found {len(repos)} repositories in database")
-        
-        STEALTH_DELAY = 1.0
-        CHUNK_SIZE = 10
-        CHUNK_DELAY = 3
-        
-        logger.info(f"[STEALTH-HEALTH] Using stealth HTML fetching (STEALTH_DELAY={STEALTH_DELAY}s, CHUNK_SIZE={CHUNK_SIZE}, CHUNK_DELAY={CHUNK_DELAY}s)")
-        
-        healthy_count = 0
-        archived_count = 0
-        not_found_count = 0
-        error_count = 0
-        repo_updates = []
-        
-        logger.info(f"[HEALTH-CHECK-TASK] Starting to process {len(repos)} repositories")
-        logger.info(f"[HEALTH-CHECK-TASK] Will process in {(len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE} chunks")
-        
-        for chunk_idx in range(0, len(repos), CHUNK_SIZE):
-            chunk = repos[chunk_idx:chunk_idx + CHUNK_SIZE]
-            chunk_num = (chunk_idx // CHUNK_SIZE) + 1
-            total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
-            logger.info(f"[HEALTH-CHECK-CHUNK] Processing chunk {chunk_num}/{total_chunks} - {len(chunk)} repos")
-            
-            for idx, repo in enumerate(chunk):
-                repo_update = {"id": repo.id}
-                global_idx = chunk_idx + idx
-                
-                try:
-                    progress_msg = f"Checking {repo.name}..."
-                    
-                    CacheService.set(
-                        f"health_check:{job_id}",
-                        {
-                            "status": "running",
-                            "current": global_idx,
-                            "total": len(repos),
-                            "healthy": healthy_count,
-                            "archived": archived_count,
-                            "not_found": not_found_count,
-                            "errors": error_count,
-                            "message": progress_msg
-                        },
-                        ttl=3600
-                    )
-                    
-                    url = repo.url.rstrip('/')
-                    if url.endswith('.git'):
-                        url = url[:-4]
-                    
-                    https_match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
-                    ssh_match = re.search(r'git@github\.com:([^/]+)/([^/]+)', url)
-                    
-                    if https_match:
-                        owner, repo_name = https_match.group(1), https_match.group(2)
-                    elif ssh_match:
-                        owner, repo_name = ssh_match.group(1), ssh_match.group(2)
-                    else:
-                        repo_update["health_status"] = "unknown"
-                        repo_update["last_health_check"] = datetime.utcnow()
-                        repo_updates.append(repo_update)
-                        continue
-                    
-                    meta = await _stealth_fetch_github_meta(owner, repo_name)
-                    
-                    if meta:
-                        repo_update.update({
-                            "language": meta.get("language"),
-                            "topics": meta.get("topics", "").split() if meta.get("topics") else [],
-                        })
-                        
-                        if meta.get("description") and (not repo.description or len(repo.description) < 50):
-                            repo_update["description"] = meta["description"]
-                        
-                        repo_update["health_status"] = "healthy"
-                        healthy_count += 1
-                    else:
-                        repo_update["health_status"] = "not_found"
-                        not_found_count += 1
-                    
-                    await asyncio.sleep(STEALTH_DELAY)
 
+        logger.info(f"[HEALTH-CHECK-TASK] Starting job {job_id} for {len(repository_ids)} repos")
+
+        db = SessionLocal()
+        repos = db.query(Repository).filter(Repository.id.in_(repository_ids)).all()
+        total = len(repos)
+        logger.info(f"[HEALTH-CHECK-TASK] Found {total} repositories")
+
+        # Shared counters (mutated inside coroutines — use a dict for mutability)
+        counts = {"healthy": 0, "archived": 0, "not_found": 0, "errors": 0, "done": 0}
+        repo_updates = []
+        sem = asyncio.Semaphore(10)  # max 10 concurrent stealth fetches
+
+        async def check_one(repo):
+            update = {"id": repo.id, "last_health_check": datetime.utcnow()}
+            async with sem:
+                try:
+                    url = repo.url.rstrip("/")
+                    if url.endswith(".git"):
+                        url = url[:-4]
+                    m = re.search(r"github\.com/([^/]+)/([^/]+)", url) or \
+                        re.search(r"git@github\.com:([^/]+)/([^/]+)", url)
+                    if not m:
+                        update["health_status"] = "unknown"
+                        counts["errors"] += 1
+                        return update
+
+                    owner, repo_name = m.group(1), m.group(2)
+                    meta = await _stealth_fetch_github_meta(owner, repo_name)
+
+                    if meta:
+                        update["language"] = meta.get("language")
+                        update["topics"] = meta.get("topics", "").split() if meta.get("topics") else []
+                        if meta.get("description") and (not repo.description or len(repo.description) < 50):
+                            update["description"] = meta["description"]
+                        update["health_status"] = "healthy"
+                        counts["healthy"] += 1
+                    else:
+                        update["health_status"] = "not_found"
+                        counts["not_found"] += 1
+
+                    await asyncio.sleep(0.5)  # gentle rate-limit per slot
                 except Exception as e:
-                    logger.error(f"Error checking repository {repo.id}: {e}")
-                    repo_update["health_status"] = "unknown"
-                    error_count += 1
-                
-                repo_update["last_health_check"] = datetime.utcnow()
-                repo_updates.append(repo_update)
-            
-            if chunk_idx + CHUNK_SIZE < len(repos):
-                chunk_num = (chunk_idx // CHUNK_SIZE) + 1
-                total_chunks = (len(repos) + CHUNK_SIZE - 1) // CHUNK_SIZE
-                logger.info(f"[HEALTH-CHECK-CHUNK] Completed chunk {chunk_num}/{total_chunks}, pausing {CHUNK_DELAY}s before next chunk")
-                await asyncio.sleep(CHUNK_DELAY)
+                    logger.error(f"Error checking repo {repo.id}: {e}")
+                    update["health_status"] = "unknown"
+                    counts["errors"] += 1
+
+            counts["done"] += 1
+            CacheService.set(
+                f"health_check:{job_id}",
+                {"status": "running", "current": counts["done"], "total": total, **counts,
+                 "message": f"Checking… ({counts['done']}/{total})"},
+                ttl=3600,
+            )
+            return update
+
+        results = await asyncio.gather(*[check_one(r) for r in repos], return_exceptions=True)
+        repo_updates = [r for r in results if isinstance(r, dict)]
         
         if repo_updates:
             db.bulk_update_mappings(Repository, repo_updates)
@@ -1340,22 +1310,40 @@ async def get_audit_logs(
 # ============ EXPORT ENDPOINTS ============
 
 
+_EXPORT_CHUNK = 500   # rows fetched per DB round-trip
+_EXPORT_MAX   = 50_000  # hard ceiling to prevent runaway memory
+
+
 @app.get("/api/export/csv")
 async def export_csv(
     category: Optional[str] = Query(None, description="Filter by category"),
     db: Session = Depends(get_db)
 ):
-    """Export repositories to CSV format"""
-    from fastapi.responses import Response
+    """Stream repositories as CSV (chunked to avoid OOM on large libraries)."""
+    from fastapi.responses import StreamingResponse
     from services.export_service import ExportService
 
-    repos = repo_crud.get_repositories(db, category=category, skip=0, limit=100000)
-    csv_content = ExportService.to_csv(repos)
+    def _generate():
+        offset = 0
+        first = True
+        while offset < _EXPORT_MAX:
+            batch = repo_crud.get_repositories(db, category=category, skip=offset, limit=_EXPORT_CHUNK)
+            if not batch:
+                break
+            chunk = ExportService.to_csv(batch)
+            # Strip the header from subsequent chunks
+            if not first:
+                chunk = "\n".join(chunk.splitlines()[1:]) + "\n"
+            yield chunk
+            first = False
+            if len(batch) < _EXPORT_CHUNK:
+                break
+            offset += _EXPORT_CHUNK
 
-    return Response(
-        content=csv_content,
+    return StreamingResponse(
+        _generate(),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=repositories.csv"}
+        headers={"Content-Disposition": "attachment; filename=repositories.csv"},
     )
 
 
@@ -1364,17 +1352,32 @@ async def export_json(
     category: Optional[str] = Query(None, description="Filter by category"),
     db: Session = Depends(get_db)
 ):
-    """Export repositories to JSON format"""
-    from fastapi.responses import Response
+    """Stream repositories as JSON array (chunked to avoid OOM on large libraries)."""
+    from fastapi.responses import StreamingResponse
     from services.export_service import ExportService
+    import json
 
-    repos = repo_crud.get_repositories(db, category=category, skip=0, limit=100000)
-    json_content = ExportService.to_json(repos)
+    def _generate():
+        yield "["
+        offset = 0
+        first_item = True
+        while offset < _EXPORT_MAX:
+            batch = repo_crud.get_repositories(db, category=category, skip=offset, limit=_EXPORT_CHUNK)
+            if not batch:
+                break
+            for repo in batch:
+                prefix = "" if first_item else ","
+                yield prefix + json.dumps(ExportService._repo_to_dict(repo))
+                first_item = False
+            if len(batch) < _EXPORT_CHUNK:
+                break
+            offset += _EXPORT_CHUNK
+        yield "]"
 
-    return Response(
-        content=json_content,
+    return StreamingResponse(
+        _generate(),
         media_type="application/json",
-        headers={"Content-Disposition": "attachment; filename=repositories.json"}
+        headers={"Content-Disposition": "attachment; filename=repositories.json"},
     )
 
 
@@ -1383,17 +1386,32 @@ async def export_markdown(
     category: Optional[str] = Query(None, description="Filter by category"),
     db: Session = Depends(get_db)
 ):
-    """Export repositories to Markdown format"""
-    from fastapi.responses import Response
+    """Stream repositories as Markdown (chunked to avoid OOM on large libraries)."""
+    from fastapi.responses import StreamingResponse
     from services.export_service import ExportService
 
-    repos = repo_crud.get_repositories(db, category=category, skip=0, limit=100000)
-    md_content = ExportService.to_markdown(repos)
+    def _generate():
+        offset = 0
+        first = True
+        while offset < _EXPORT_MAX:
+            batch = repo_crud.get_repositories(db, category=category, skip=offset, limit=_EXPORT_CHUNK)
+            if not batch:
+                break
+            chunk = ExportService.to_markdown(batch)
+            if not first:
+                # Strip the header (first 3 lines: title + blank + table header)
+                lines = chunk.splitlines()
+                chunk = "\n".join(lines[3:]) + "\n"
+            yield chunk
+            first = False
+            if len(batch) < _EXPORT_CHUNK:
+                break
+            offset += _EXPORT_CHUNK
 
-    return Response(
-        content=md_content,
+    return StreamingResponse(
+        _generate(),
         media_type="text/markdown",
-        headers={"Content-Disposition": "attachment; filename=repositories.md"}
+        headers={"Content-Disposition": "attachment; filename=repositories.md"},
     )
 
 

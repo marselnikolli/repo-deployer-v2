@@ -12,6 +12,22 @@ class ExportService:
     """Service for exporting repository data to various formats"""
 
     @staticmethod
+    def _repo_to_dict(repo: Repository) -> dict:
+        return {
+            "id": repo.id,
+            "name": repo.name,
+            "url": repo.url,
+            "title": repo.title,
+            "category": repo.category,
+            "description": repo.description,
+            "cloned": repo.cloned,
+            "deployed": repo.deployed,
+            "last_synced": repo.last_synced.isoformat() if repo.last_synced else None,
+            "created_at": repo.created_at.isoformat() if repo.created_at else None,
+            "updated_at": repo.updated_at.isoformat() if repo.updated_at else None,
+        }
+
+    @staticmethod
     def to_csv(repositories: List[Repository]) -> str:
         """Export repositories to CSV format"""
         output = io.StringIO()

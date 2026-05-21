@@ -56,6 +56,69 @@ class ZipQueue:
         self._queue: asyncio.Queue = None     # initialised lazily (needs running event loop)
         self._worker_task: Optional[asyncio.Task] = None
         self._db_session_factory = None
+        self._redis = None
+
+    def _get_redis(self):
+        if self._redis is not None:
+            return self._redis
+        try:
+            import redis as redis_module
+            url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            self._redis = redis_module.from_url(url, decode_responses=True, socket_connect_timeout=2)
+            self._redis.ping()
+        except Exception as e:
+            logger.warning(f"[ZIP] Redis unavailable, jobs won't persist: {e}")
+            self._redis = None
+        return self._redis
+
+    def _redis_save_job(self, job: ZipJob):
+        r = self._get_redis()
+        if not r:
+            return
+        try:
+            r.hset(f"zip:job:{job.repo_id}", mapping={
+                "repo_id": job.repo_id,
+                "repo_url": job.repo_url,
+                "zip_path": job.zip_path,
+                "status": job.status,
+                "queued_at": job.queued_at.isoformat(),
+            })
+        except Exception as e:
+            logger.warning(f"[ZIP] Redis write failed: {e}")
+
+    def _redis_update_status(self, repo_id: int, status: str):
+        r = self._get_redis()
+        if not r:
+            return
+        try:
+            r.hset(f"zip:job:{repo_id}", "status", status)
+            if status in (_STATUS_DONE, _STATUS_FAILED):
+                r.expire(f"zip:job:{repo_id}", 86400)
+        except Exception as e:
+            logger.warning(f"[ZIP] Redis status update failed: {e}")
+
+    def _reload_from_redis(self):
+        r = self._get_redis()
+        if not r:
+            return
+        try:
+            keys = r.keys("zip:job:*")
+            restored = 0
+            for key in keys:
+                data = r.hgetall(key)
+                if not data or data.get("status") != _STATUS_PENDING:
+                    continue
+                repo_id = int(data["repo_id"])
+                if repo_id in self._jobs:
+                    continue
+                job = ZipJob(repo_id, data["repo_url"], data["zip_path"])
+                self._jobs[repo_id] = job
+                self._ensure_queue().put_nowait(job)
+                restored += 1
+            if restored:
+                logger.info(f"[ZIP] Restored {restored} pending jobs from Redis")
+        except Exception as e:
+            logger.warning(f"[ZIP] Redis reload failed: {e}")
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -73,6 +136,7 @@ class ZipQueue:
 
         job = ZipJob(repo_id, repo_url, zip_path)
         self._jobs[repo_id] = job
+        self._redis_save_job(job)
         self._ensure_queue().put_nowait(job)
         logger.info(f"[ZIP] Enqueued repo {repo_id} ({repo_url})")
         return True
@@ -85,7 +149,8 @@ class ZipQueue:
         return {rid: job.to_dict() for rid, job in self._jobs.items()}
 
     def start(self):
-        """Start the background worker coroutine (call from FastAPI lifespan)."""
+        """Start the background worker coroutine, restoring persisted pending jobs."""
+        self._reload_from_redis()
         loop = asyncio.get_event_loop()
         self._worker_task = loop.create_task(self._worker())
         logger.info("[ZIP] Worker started")
@@ -138,6 +203,7 @@ class ZipQueue:
             logger.error(f"[ZIP] Failed {job.repo_id}: {exc}")
         finally:
             job.finished_at = datetime.utcnow()
+            self._redis_update_status(job.repo_id, job.status)
 
         # Persist zip_status + zip_path to DB
         if self._db_session_factory:

@@ -1,7 +1,8 @@
 """CRUD operations for User model"""
 
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, cast
+from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 from models import User
 from services.auth import hash_password, generate_api_key
@@ -113,14 +114,12 @@ def revoke_api_key(db: Session, user_id: int, key: str) -> bool:
 
 
 def get_user_by_api_key(db: Session, api_key: str) -> Optional[User]:
-    """Get a user by API key"""
-    users = db.query(User).all()
-    for user in users:
-        if user.api_keys:
-            for key_obj in user.api_keys:
-                if key_obj.get("key") == api_key:
-                    return user
-    return None
+    """Get a user by API key using a single indexed query"""
+    return (
+        db.query(User)
+        .filter(cast(User.api_keys, JSONB).contains([{"key": api_key}]))
+        .first()
+    )
 
 
 def list_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
