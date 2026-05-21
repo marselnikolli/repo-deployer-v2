@@ -222,21 +222,17 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </button>
         </div>
 
-        {/* Demo Credentials */}
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <p className="text-xs text-gray-600 text-center mb-3">Demo Credentials:</p>
-          <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
-            <p>
-              <span className="font-medium">Username:</span> any username
-            </p>
-            <p>
-              <span className="font-medium">Password:</span> any password
-            </p>
-            <p className="text-gray-500 italic mt-2">
-              (Mock authentication for demonstration)
-            </p>
+        {/* Demo Credentials — only shown in development builds */}
+        {import.meta.env.DEV && (
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <p className="text-xs text-gray-600 text-center mb-3">Demo Credentials:</p>
+            <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+              <p><span className="font-medium">Username:</span> any username</p>
+              <p><span className="font-medium">Password:</span> any password</p>
+              <p className="text-gray-500 italic mt-2">(Mock authentication for demonstration)</p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

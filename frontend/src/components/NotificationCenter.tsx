@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Bell, X, Check, CheckCheck, Trash2 } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 
 interface Notification {
@@ -23,74 +24,58 @@ interface NotificationStats {
   by_delivery_status: Record<string, number>
 }
 
+const authHeaders = () => ({
+  'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+  'Content-Type': 'application/json',
+})
+
+async function fetchNotificationsData(userId: number) {
+  const [nRes, sRes] = await Promise.all([
+    fetch(`/api/notifications?user_id=${userId}`, { headers: authHeaders() }),
+    fetch(`/api/notifications/stats?user_id=${userId}`, { headers: authHeaders() }),
+  ])
+  const notifications: Notification[] = nRes.ok ? await nRes.json() : []
+  const stats: NotificationStats | null = sRes.ok ? await sRes.json() : null
+  return { notifications, stats }
+}
+
 export function NotificationCenter() {
   const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [stats, setStats] = useState<NotificationStats | null>(null)
-  // const [loading, setLoading] = useState(false) // Not used
+  const qc = useQueryClient()
 
-  // Get current user ID from localStorage or context
-  const getUserId = () => {
+  const getUserId = (): number | null => {
     try {
       const userData = localStorage.getItem('user')
-      if (userData) {
-        const user = JSON.parse(userData)
-        return user.id
-      }
-    } catch (e) {
-      console.error('Failed to get user ID')
-    }
+      if (userData) return JSON.parse(userData).id
+    } catch { /* ignore */ }
     return null
   }
 
-  useEffect(() => {
-    fetchNotifications()
-    const interval = setInterval(fetchNotifications, 10000) // Poll every 10 seconds
-    return () => clearInterval(interval)
-  }, [])
+  const userId = getUserId()
 
-  const fetchNotifications = async () => {
-    const userId = getUserId()
-    if (!userId) return
+  const { data } = useQuery({
+    queryKey: ['notifications', userId],
+    queryFn: () => fetchNotificationsData(userId!),
+    enabled: !!userId,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false, // pause when tab is hidden
+  })
 
-    try {
-      const response = await fetch(`/api/notifications?user_id=${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setNotifications(data)
-      }
+  const notifications = data?.notifications ?? []
+  const stats = data?.stats ?? null
 
-      const statsResponse = await fetch(`/api/notifications/stats?user_id=${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      })
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json()
-        setStats(statsData)
-      }
-    } catch (error) {
-      console.error('Failed to fetch notifications:', error)
-    }
-  }
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['notifications', userId] })
 
   const markAsRead = async (id: number) => {
-    const userId = getUserId()
     if (!userId) return
 
     try {
       const response = await fetch(`/api/notifications/${id}/read?user_id=${userId}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
+        headers: authHeaders(),
       })
       if (response.ok) {
-        await fetchNotifications()
+        invalidate()
         toast.success('Notification marked as read')
       }
     } catch (error) {
@@ -99,18 +84,15 @@ export function NotificationCenter() {
   }
 
   const markAllAsRead = async () => {
-    const userId = getUserId()
     if (!userId) return
 
     try {
       const response = await fetch(`/api/notifications/read-all?user_id=${userId}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
+        headers: authHeaders(),
       })
       if (response.ok) {
-        await fetchNotifications()
+        invalidate()
         toast.success('All notifications marked as read')
       }
     } catch (error) {
@@ -119,18 +101,15 @@ export function NotificationCenter() {
   }
 
   const deleteNotification = async (id: number) => {
-    const userId = getUserId()
     if (!userId) return
 
     try {
       const response = await fetch(`/api/notifications/${id}?user_id=${userId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
+        headers: authHeaders(),
       })
       if (response.ok) {
-        await fetchNotifications()
+        invalidate()
         toast.success('Notification deleted')
       }
     } catch (error) {
@@ -139,18 +118,15 @@ export function NotificationCenter() {
   }
 
   const clearNotifications = async () => {
-    const userId = getUserId()
     if (!userId) return
 
     try {
       const response = await fetch(`/api/notifications/clear?user_id=${userId}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
+        headers: authHeaders(),
       })
       if (response.ok) {
-        await fetchNotifications()
+        invalidate()
         toast.success('Old notifications cleared')
       }
     } catch (error) {

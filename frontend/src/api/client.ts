@@ -31,6 +31,21 @@ api.interceptors.response.use(
   }
 )
 
+interface CreateRepositoryPayload {
+  url: string
+  name?: string
+  title?: string
+  category?: string
+  description?: string
+}
+
+interface UpdateRepositoryPayload {
+  name?: string
+  title?: string
+  category?: string
+  description?: string
+}
+
 // Repository endpoints
 export const repositoryApi = {
   list: (category?: string, skip = 0, limit = 100, sortBy?: string, sortOrder?: 'asc' | 'desc') =>
@@ -39,10 +54,10 @@ export const repositoryApi = {
   get: (id: number) =>
     api.get(`/repositories/${id}`),
 
-  create: (data: any) =>
+  create: (data: CreateRepositoryPayload) =>
     api.post(`/repositories`, data),
 
-  update: (id: number, data: any) =>
+  update: (id: number, data: UpdateRepositoryPayload) =>
     api.put(`/repositories/${id}`, data),
 
   delete: (id: number) =>
@@ -53,6 +68,9 @@ export const repositoryApi = {
 
   sync: (id: number) =>
     api.post(`/repositories/${id}/sync`),
+
+  syncMetadata: (id: number) =>
+    api.post(`/repositories/${id}/sync-metadata`),
 
   deploy: (id: number) =>
     api.post(`/repositories/${id}/deploy`),

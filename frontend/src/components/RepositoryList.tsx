@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CheckCircle,
   Server,
@@ -27,6 +28,7 @@ import toast from 'react-hot-toast'
 import { RepositoryDetails } from './RepositoryDetails'
 import { ReadmeModal } from './ReadmeModal'
 import { DeleteConfirmationModal } from './DeleteConfirmationModal'
+import { CategoryBadge } from './CategoryBadge'
 import { useKeyboardShortcuts, KEYBOARD_SHORTCUTS } from '@/hooks/useKeyboardShortcuts'
 
 // Utility to clean URLs by removing tracking parameters
@@ -62,8 +64,30 @@ interface Repository {
   stars?: number
   forks?: number
   language?: string
+  topics?: string[]
+  description?: string
   health_status?: string
   last_health_check?: string
+}
+
+interface CloneJob {
+  id: number
+  repository_id: number
+  repository_name: string
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  error_message?: string
+}
+
+interface ImportJob {
+  id: number
+  source_type: string
+  status: string
+  total_repositories: number
+  imported_repositories: number
+  failed_repositories: number
+  error_message?: string
+  created_at: string
 }
 
 export function RepositoryList() {
@@ -95,13 +119,37 @@ export function RepositoryList() {
   const [readmeRepo, setReadmeRepo] = useState<Repository | null>(null)
   const [focusedIndex, setFocusedIndex] = useState<number>(-1)
   const [showShortcuts, setShowShortcuts] = useState(false)
-  const [cloneJobs, setCloneJobs] = useState<any[]>([])
   const [isCloning, setIsCloning] = useState(false)
   const [isHealthChecking, setIsHealthChecking] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null)
-  const [importJobs, setImportJobs] = useState<any[]>([])
-  
+  const qc = useQueryClient()
+
+  // Clone jobs — poll only while actively cloning, stop once all done
+  const { data: cloneJobsData } = useQuery({
+    queryKey: ['clone-jobs'],
+    queryFn: async () => {
+      const res = await cloneQueueApi.jobs()
+      return res.data as CloneJob[]
+    },
+    refetchInterval: isCloning ? 1500 : false,
+    enabled: isCloning,
+  })
+  const cloneJobs = cloneJobsData ?? []
+
+  // Import jobs — always poll while authenticated, pause in background
+  const { data: importJobsData } = useQuery({
+    queryKey: ['import-jobs'],
+    queryFn: async () => {
+      const res = await generalApi.importJobs()
+      return (res.data ?? []) as ImportJob[]
+    },
+    enabled: !!localStorage.getItem('auth_token'),
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+  })
+  const importJobs = importJobsData ?? []
+
   // Delete confirmation modal state
   const [deleteModal, setDeleteModal] = useState<{isOpen: boolean; title: string; message: string; itemCount: number; onConfirm: () => void}>({
     isOpen: false,
@@ -112,88 +160,26 @@ export function RepositoryList() {
   })
   
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const clonePollingRef = useRef<NodeJS.Timeout | null>(null)
-  const importPollingRef = useRef<NodeJS.Timeout | null>(null)
-  const previousImportJobsRef = useRef<any[]>([])
 
   useEffect(() => {
     fetchRepositories()
     fetchCategories()
   }, [currentPage, filterCategory, filterCloned, filterDeployed, sortBy, sortOrder])
 
-  // Poll for clone job status
+  // Stop cloning state + refresh when all clone jobs finish
   useEffect(() => {
-    if (isCloning) {
-      clonePollingRef.current = setInterval(async () => {
-        try {
-          const response = await cloneQueueApi.jobs()
-          const jobs = response.data
-          setCloneJobs(jobs)
-
-          // Check for newly completed jobs
-          const completedJobs = jobs.filter((j: any) => j.status === 'completed')
-          const failedJobs = jobs.filter((j: any) => j.status === 'failed')
-          const pendingOrInProgress = jobs.filter((j: any) =>
-            j.status === 'pending' || j.status === 'in_progress'
-          )
-
-          // If all jobs are done, stop polling and refresh
-          if (pendingOrInProgress.length === 0 && jobs.length > 0) {
-            setIsCloning(false)
-            if (completedJobs.length > 0) {
-              toast.success(`Cloned ${completedJobs.length} repositories successfully!`)
-            }
-            if (failedJobs.length > 0) {
-              toast.error(`${failedJobs.length} repositories failed to clone`)
-            }
-            fetchRepositories()
-            await cloneQueueApi.clear()
-            setCloneJobs([])
-          }
-        } catch (error) {
-          console.error('Error polling clone jobs:', error)
-        }
-      }, 1500)
+    if (!isCloning || cloneJobs.length === 0) return
+    const active = cloneJobs.filter(j => j.status === 'pending' || j.status === 'in_progress')
+    if (active.length === 0) {
+      const done = cloneJobs.filter(j => j.status === 'completed').length
+      const failed = cloneJobs.filter(j => j.status === 'failed').length
+      setIsCloning(false)
+      if (done > 0) toast.success(`Cloned ${done} repositories successfully!`)
+      if (failed > 0) toast.error(`${failed} repositories failed to clone`)
+      fetchRepositories()
+      cloneQueueApi.clear().then(() => qc.invalidateQueries({ queryKey: ['clone-jobs'] }))
     }
-
-    return () => {
-      if (clonePollingRef.current) {
-        clearInterval(clonePollingRef.current)
-      }
-    }
-  }, [isCloning])
-
-  // Poll for import jobs
-  useEffect(() => {
-    // Only start polling if we have authentication
-    const token = localStorage.getItem('auth_token')
-    if (!token) {
-      return
-    }
-
-    importPollingRef.current = setInterval(async () => {
-      try {
-        const response = await generalApi.importJobs()
-        const jobs = response.data || []
-        console.log('[IMPORT-POLLING] Jobs poll cycle - jobs count:', jobs.length, 'jobs:', jobs)
-        
-        // Update the ref with current jobs
-        previousImportJobsRef.current = jobs
-        setImportJobs(jobs)
-      } catch (error: any) {
-        // Only log non-401 errors (401 means user not logged in)
-        if (error?.response?.status !== 401) {
-          console.error('Error polling import jobs:', error)
-        }
-      }
-    }, 2000)
-
-    return () => {
-      if (importPollingRef.current) {
-        clearInterval(importPollingRef.current)
-      }
-    }
-  }, [])
+  }, [cloneJobs, isCloning])
 
   // debounce search
   useEffect(() => {
@@ -326,10 +312,8 @@ export function RepositoryList() {
     }
 
     try {
-      // Clear any previous clone jobs first
       await cloneQueueApi.clear()
-      setCloneJobs([])
-      
+      qc.invalidateQueries({ queryKey: ['clone-jobs'] })
       const response = await cloneQueueApi.add(reposToClone.map((r) => r.id))
       toast.success(`Started cloning ${response.data.jobs_added} repositories`)
       setIsCloning(true)
@@ -797,11 +781,30 @@ export function RepositoryList() {
         </div>
       )}
 
-      {repositories.length === 0 ? (
-        <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] border border-[var(--color-border-secondary)] p-12 text-center">
-          <p className="text-[length:var(--text-md)] text-[var(--color-fg-quaternary)]">
-            No repositories found. Start by importing bookmarks!
-          </p>
+      {repositories.length === 0 && !loading ? (
+        <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] border border-[var(--color-border-secondary)] p-16 text-center flex flex-col items-center gap-4">
+          {filterCategory || filterCloned !== null || filterDeployed !== null || searchQuery ? (
+            <>
+              <p className="text-[length:var(--text-lg)] font-medium text-[var(--color-fg-primary)]">No results</p>
+              <p className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)]">
+                No repositories match the current filters.
+              </p>
+              <button
+                onClick={() => { setFilterCategory(null); setFilterCloned(null); setFilterDeployed(null); setSearchQuery('') }}
+                className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] underline"
+              >
+                Clear filters
+              </button>
+            </>
+          ) : (
+            <>
+              <GitBranch className="size-12 text-[var(--color-fg-quaternary)]" />
+              <p className="text-[length:var(--text-lg)] font-medium text-[var(--color-fg-primary)]">No repositories yet</p>
+              <p className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)] max-w-sm">
+                Import your first repositories from GitHub, browser bookmarks, or paste a URL to get started.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -946,26 +949,40 @@ export function RepositoryList() {
                       <CategoryBadge category={repo?.category || 'uncategorized'} />
                     </td>
                     <td className="px-4 py-3 min-w-[150px]">
-                      <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
-                        {repo?.stars !== undefined && repo?.stars > 0 && (
-                          <span className="inline-flex items-center gap-1">
-                            <Star className="size-3 text-yellow-500" />
-                            {repo.stars}
-                          </span>
-                        )}
-                        {repo?.forks !== undefined && repo?.forks > 0 && (
-                          <span className="inline-flex items-center gap-1">
-                            <GitFork className="size-3 text-[var(--color-fg-tertiary)]" />
-                            {repo.forks}
-                          </span>
-                        )}
-                        {repo?.language && (
-                          <span className="px-2 py-1 bg-[var(--color-bg-secondary)] rounded-[var(--radius-sm)]">
-                            {repo.language}
-                          </span>
-                        )}
-                        {!repo?.language && (!repo?.stars || repo.stars === 0) && (!repo?.forks || repo.forks === 0) && (
-                          <span className="text-[var(--color-fg-quaternary)]">—</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
+                          {(repo?.stars ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-1">
+                              <Star className="size-3 text-yellow-500" />
+                              {repo.stars!.toLocaleString()}
+                            </span>
+                          )}
+                          {(repo?.forks ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-1">
+                              <GitFork className="size-3 text-[var(--color-fg-tertiary)]" />
+                              {repo.forks!.toLocaleString()}
+                            </span>
+                          )}
+                          {repo?.language && (
+                            <span className="px-2 py-0.5 bg-[var(--color-bg-secondary)] rounded-[var(--radius-sm)] font-medium">
+                              {repo.language}
+                            </span>
+                          )}
+                          {!repo?.language && !repo?.stars && !repo?.forks && (
+                            <span className="text-[var(--color-fg-quaternary)]">—</span>
+                          )}
+                        </div>
+                        {(repo?.topics?.length ?? 0) > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {repo.topics!.slice(0, 3).map(t => (
+                              <span key={t} className="px-1.5 py-0.5 text-[10px] bg-[var(--color-brand-50)] text-[var(--color-brand-600)] rounded-[var(--radius-sm)]">
+                                {t}
+                              </span>
+                            ))}
+                            {repo.topics!.length > 3 && (
+                              <span className="text-[10px] text-[var(--color-fg-quaternary)]">+{repo.topics!.length - 3}</span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -1119,34 +1136,3 @@ export function RepositoryList() {
   )
 }
 
-interface CategoryBadgeProps {
-  category: string
-}
-
-const categoryColors: Record<string, { bg: string; text: string }> = {
-  security: { bg: 'bg-[var(--color-error-50)]', text: 'text-[var(--color-error-700)]' },
-  ci_cd: { bg: 'bg-[var(--color-purple-50)]', text: 'text-[var(--color-purple-700)]' },
-  database: { bg: 'bg-[var(--color-success-50)]', text: 'text-[var(--color-success-700)]' },
-  devops: { bg: 'bg-[var(--color-orange-50)]', text: 'text-[var(--color-orange-700)]' },
-  api: { bg: 'bg-[var(--color-brand-50)]', text: 'text-[var(--color-brand-700)]' },
-  frontend: { bg: 'bg-[var(--color-pink-50)]', text: 'text-[var(--color-pink-700)]' },
-  backend: { bg: 'bg-[var(--color-indigo-50)]', text: 'text-[var(--color-indigo-700)]' },
-  ml_ai: { bg: 'bg-[var(--color-warning-50)]', text: 'text-[var(--color-warning-700)]' },
-  default: { bg: 'bg-[var(--color-gray-100)]', text: 'text-[var(--color-gray-700)]' },
-}
-
-function CategoryBadge({ category }: CategoryBadgeProps) {
-  const colors = categoryColors[category] || categoryColors.default
-
-  return (
-    <span
-      className={cx(
-        'inline-block px-2.5 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-full)] capitalize',
-        colors.bg,
-        colors.text
-      )}
-    >
-      {category.replace('_', ' ')}
-    </span>
-  )
-}

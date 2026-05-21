@@ -1,23 +1,36 @@
+import { Suspense, lazy } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { Routes, Route } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
+import ProtectedRoute from '@/components/ProtectedRoute'
+
+// Eagerly loaded — needed on first paint for every user
 import { HomePage } from '@/pages/HomePage'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
-import GitHubLoginPage from '@/pages/GitHubLoginPage'
-import GitHubBookmarksCallbackPage from '@/pages/GitHubBookmarksCallbackPage'
-import GoogleLoginPage from '@/pages/GoogleLoginPage'
-import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
-import PasswordResetPage from '@/pages/PasswordResetPage'
-import EmailVerificationPage from '@/pages/EmailVerificationPage'
-import DockerSetupPage from '@/pages/DockerSetupPage'
-import { DeploymentPage } from '@/pages/DeploymentPage'
-import { NotificationSettingsPage } from '@/pages/NotificationSettingsPage'
-import { UserSettingsPage } from '@/pages/UserSettingsPage'
-import { SearchPage } from '@/pages/SearchPage'
-import ImportsPage from '@/pages/ImportsPage'
-import CollectionsPage from '@/pages/CollectionsPage'
-import ProtectedRoute from '@/components/ProtectedRoute'
-import { useAuth } from '@/contexts/AuthContext'
+
+// Lazily loaded — only pulled when the user navigates to these routes
+const GitHubLoginPage            = lazy(() => import('@/pages/GitHubLoginPage'))
+const GitHubBookmarksCallbackPage = lazy(() => import('@/pages/GitHubBookmarksCallbackPage'))
+const GoogleLoginPage            = lazy(() => import('@/pages/GoogleLoginPage'))
+const ForgotPasswordPage         = lazy(() => import('@/pages/ForgotPasswordPage'))
+const PasswordResetPage          = lazy(() => import('@/pages/PasswordResetPage'))
+const EmailVerificationPage      = lazy(() => import('@/pages/EmailVerificationPage'))
+const DockerSetupPage            = lazy(() => import('@/pages/DockerSetupPage'))
+const DeploymentPage             = lazy(() => import('@/pages/DeploymentPage').then(m => ({ default: m.DeploymentPage })))
+const NotificationSettingsPage   = lazy(() => import('@/pages/NotificationSettingsPage').then(m => ({ default: m.NotificationSettingsPage })))
+const UserSettingsPage           = lazy(() => import('@/pages/UserSettingsPage').then(m => ({ default: m.UserSettingsPage })))
+const SearchPage                 = lazy(() => import('@/pages/SearchPage').then(m => ({ default: m.SearchPage })))
+const ImportsPage                = lazy(() => import('@/pages/ImportsPage'))
+const CollectionsPage            = lazy(() => import('@/pages/CollectionsPage'))
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-secondary)]">
+      <div className="animate-spin rounded-full h-8 w-8 border border-[var(--color-border-secondary)] border-t-[var(--color-brand-600)]" />
+    </div>
+  )
+}
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -32,6 +45,7 @@ function App() {
 
   return (
     <>
+      <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
@@ -99,6 +113,7 @@ function App() {
           }
         />
       </Routes>
+      </Suspense>
       <Toaster
         position="top-right"
         toastOptions={{
