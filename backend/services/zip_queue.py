@@ -57,6 +57,7 @@ class ZipQueue:
         self._worker_task: Optional[asyncio.Task] = None
         self._db_session_factory = None
         self._redis = None
+        self.on_job_update = None            # optional async callable(repo_id, status)
 
     def _get_redis(self):
         if self._redis is not None:
@@ -204,6 +205,11 @@ class ZipQueue:
         finally:
             job.finished_at = datetime.utcnow()
             self._redis_update_status(job.repo_id, job.status)
+            if self.on_job_update:
+                try:
+                    await self.on_job_update(job.repo_id, job.status)
+                except Exception:
+                    pass
 
         # Persist zip_status + zip_path to DB
         if self._db_session_factory:

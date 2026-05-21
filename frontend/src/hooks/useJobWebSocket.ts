@@ -1,0 +1,63 @@
+import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+
+/**
+ * Opens a WebSocket to /api/ws and invalidates React Query caches when
+ * the server broadcasts job update events.
+ *
+ * If the connection drops, it automatically reconnects after 3 seconds.
+ * React Query polling intervals serve as the fallback while disconnected.
+ */
+export function useJobWebSocket() {
+  const qc = useQueryClient()
+  const wsRef = useRef<WebSocket | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const unmountedRef = useRef(false)
+  const [isConnected, setIsConnected] = useState(false)
+
+  useEffect(() => {
+    unmountedRef.current = false
+
+    function connect() {
+      if (unmountedRef.current) return
+
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const socket = new WebSocket(`${proto}//${location.host}/api/ws`)
+      wsRef.current = socket
+
+      socket.onopen = () => setIsConnected(true)
+
+      socket.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data) as { type: string }
+          switch (msg.type) {
+            case 'clone_job_update':
+              qc.invalidateQueries({ queryKey: ['clone-jobs'] })
+              break
+            case 'zip_job_update':
+            case 'import_job_update':
+              qc.invalidateQueries({ queryKey: ['import-jobs'] })
+              break
+          }
+        } catch { /* ignore malformed frames */ }
+      }
+
+      socket.onclose = () => {
+        setIsConnected(false)
+        if (!unmountedRef.current) {
+          timerRef.current = setTimeout(connect, 3000)
+        }
+      }
+    }
+
+    connect()
+
+    return () => {
+      unmountedRef.current = true
+      if (timerRef.current) clearTimeout(timerRef.current)
+      wsRef.current?.close()
+    }
+  }, [qc])
+
+  return { isConnected }
+}

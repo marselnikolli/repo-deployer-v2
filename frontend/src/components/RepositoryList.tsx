@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import {
   CheckCircle,
   Server,
@@ -30,6 +31,7 @@ import { ReadmeModal } from './ReadmeModal'
 import { DeleteConfirmationModal } from './DeleteConfirmationModal'
 import { CategoryBadge } from './CategoryBadge'
 import { useKeyboardShortcuts, KEYBOARD_SHORTCUTS } from '@/hooks/useKeyboardShortcuts'
+import { useJobWebSocket } from '@/hooks/useJobWebSocket'
 
 // Utility to clean URLs by removing tracking parameters
 const cleanUrl = (url: string | undefined) => {
@@ -102,18 +104,34 @@ export function RepositoryList() {
     pageSize,
     setCurrentPage,
   } = useRepositoryStore()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [loading, setLoading] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
   const [categories, setCategories] = useState<string[]>([])
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('')
-  const [filterCategory, setFilterCategory] = useState<string | null>(null)
-  const [filterCloned, setFilterCloned] = useState<boolean | null>(null)
-  const [filterDeployed, setFilterDeployed] = useState<boolean | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [sortBy, setSortBy] = useState<string | null>(null)
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+
+  // Filters are read from and written to the URL so views are shareable
+  const filterCategory = searchParams.get('category') || null
+  const filterCloned   = searchParams.get('cloned') === '1' ? true : null
+  const filterDeployed = searchParams.get('deployed') === '1' ? true : null
+  const searchQuery    = searchParams.get('q') || ''
+  const sortBy         = searchParams.get('sort') || null
+  const sortOrder      = (searchParams.get('order') as 'asc' | 'desc') || 'asc'
+  const [debouncedQuery, setDebouncedQuery] = useState(searchQuery)
+
+  const setFilterCategory = useCallback((v: string | null) =>
+    setSearchParams(p => { v ? p.set('category', v) : p.delete('category'); p.delete('page'); return p }), [setSearchParams])
+  const setFilterCloned = useCallback((v: boolean | null) =>
+    setSearchParams(p => { v ? p.set('cloned', '1') : p.delete('cloned'); p.delete('page'); return p }), [setSearchParams])
+  const setFilterDeployed = useCallback((v: boolean | null) =>
+    setSearchParams(p => { v ? p.set('deployed', '1') : p.delete('deployed'); p.delete('page'); return p }), [setSearchParams])
+  const setSearchQuery = useCallback((v: string) =>
+    setSearchParams(p => { v ? p.set('q', v) : p.delete('q'); p.delete('page'); return p }), [setSearchParams])
+  const setSortBy = useCallback((v: string | null) =>
+    setSearchParams(p => { v ? p.set('sort', v) : p.delete('sort'); return p }), [setSearchParams])
+  const setSortOrder = useCallback((v: 'asc' | 'desc') =>
+    setSearchParams(p => { p.set('order', v); return p }), [setSearchParams])
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
   const [readmeRepo, setReadmeRepo] = useState<Repository | null>(null)
@@ -125,19 +143,22 @@ export function RepositoryList() {
   const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null)
   const qc = useQueryClient()
 
-  // Clone jobs — poll only while actively cloning, stop once all done
+  // WebSocket pushes invalidations; polling is the fallback when WS is down
+  const { isConnected: wsConnected } = useJobWebSocket()
+
+  // Clone jobs — WS pushes updates; fallback poll only while actively cloning
   const { data: cloneJobsData } = useQuery({
     queryKey: ['clone-jobs'],
     queryFn: async () => {
       const res = await cloneQueueApi.jobs()
       return res.data as CloneJob[]
     },
-    refetchInterval: isCloning ? 1500 : false,
+    refetchInterval: wsConnected ? false : (isCloning ? 1500 : false),
     enabled: isCloning,
   })
   const cloneJobs = cloneJobsData ?? []
 
-  // Import jobs — always poll while authenticated, pause in background
+  // Import jobs — WS pushes updates; fallback poll while authenticated
   const { data: importJobsData } = useQuery({
     queryKey: ['import-jobs'],
     queryFn: async () => {
@@ -145,7 +166,7 @@ export function RepositoryList() {
       return (res.data ?? []) as ImportJob[]
     },
     enabled: !!localStorage.getItem('auth_token'),
-    refetchInterval: 2000,
+    refetchInterval: wsConnected ? false : 2000,
     refetchIntervalInBackground: false,
   })
   const importJobs = importJobsData ?? []

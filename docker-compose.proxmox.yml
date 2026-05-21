@@ -4,13 +4,35 @@ version: '3.8'
 # Usage: docker compose -f docker-compose.yml -f docker-compose.proxmox.yml up -d
 #
 # Differences from the default local compose:
+#  - nginx reverse proxy on port 80 (handles API + WebSocket + frontend)
 #  - Backend runs without --reload (production mode)
 #  - LOG_LEVEL defaults to WARNING
 #  - Backup files go to a named Docker volume instead of ~/Desktop
+#  - Automated daily PostgreSQL backups (7-day retention)
 #  - Resource limits are slightly relaxed for server use
-#  - Frontend listens on all interfaces with a fixed VITE_API_URL
 
 services:
+  # ── Reverse proxy ────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: repo-deployer-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - frontend
+    networks:
+      - repo-deployer-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+
+  # ── API overrides ─────────────────────────────────────────────────────────────
   api:
     environment:
       DESKTOP_BACKUP_PATH: /host_desktop
@@ -20,12 +42,54 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - mirrors:/app/mirrors
       - backups:/host_desktop
+    # No --reload in production
     command: uvicorn main:app --host 0.0.0.0 --port 8000
+    deploy:
+      resources:
+        limits:
+          cpus: '3'
+          memory: 3G
 
+  # ── Frontend overrides ────────────────────────────────────────────────────────
   frontend:
     environment:
       VITE_API_URL: ""
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  # ── Automated PostgreSQL backups ──────────────────────────────────────────────
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    container_name: repo-deployer-db-backup
+    restart: unless-stopped
+    volumes:
+      - db_backups:/backups
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: repo_deployer
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 3
+      HEALTHCHECK_PORT: 8080
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - repo-deployer-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
 
 volumes:
   backups:
+    driver: local
+  db_backups:
     driver: local

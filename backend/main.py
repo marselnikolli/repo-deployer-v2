@@ -3,7 +3,7 @@ FastAPI Backend for GitHub Repo Deployer
 RESTful API for managing GitHub repository imports and deployments
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Query, BackgroundTasks, Header, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Query, BackgroundTasks, Header, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -27,6 +27,50 @@ from services.clone_queue import clone_queue, CloneStatus
 from services.zip_queue import zip_queue
 from crud import repository as repo_crud
 from routes import auth, docker, deployment, analytics, notifications, search, import_routes, collection_routes, github_bookmarks
+
+
+# ─── WebSocket connection manager ─────────────────────────────────────────────
+
+class WSConnectionManager:
+    """Tracks open WebSocket connections and broadcasts events to all of them."""
+
+    def __init__(self):
+        self._connections: set[WebSocket] = set()
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self._connections.add(ws)
+
+    def disconnect(self, ws: WebSocket):
+        self._connections.discard(ws)
+
+    async def broadcast(self, event_type: str, data: dict | None = None):
+        if not self._connections:
+            return
+        import json
+        payload = json.dumps({"type": event_type, **(data or {})})
+        dead: set[WebSocket] = set()
+        for ws in list(self._connections):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                dead.add(ws)
+        self._connections -= dead
+
+
+ws_manager = WSConnectionManager()
+
+# Synchronous wrapper so threaded queue workers can broadcast
+def ws_broadcast_sync(event_type: str, data: dict | None = None):
+    """Call from a non-async thread to push a WebSocket broadcast."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                ws_manager.broadcast(event_type, data), loop
+            )
+    except Exception:
+        pass  # Best-effort; never break the caller
 
 
 def _repo_zip_path(repos_dir: str, repo_name: str) -> str:
@@ -131,11 +175,17 @@ async def lifespan(app: FastAPI):
     
     # Start clone queue worker
     clone_queue.db_session_factory = SessionLocal
-    clone_queue.set_zip_queue(zip_queue)  # Enable automatic ZIP enqueueing on clone completion
+    clone_queue.set_zip_queue(zip_queue)
+    clone_queue.on_job_update = lambda job: ws_broadcast_sync(
+        "clone_job_update", {"job_id": job.id, "status": job.status.value, "repo_id": job.repository_id}
+    )
     clone_queue.start()
 
     # Start ZIP archive queue worker
     zip_queue.set_db_factory(SessionLocal)
+    zip_queue.on_job_update = lambda repo_id, status: asyncio.ensure_future(
+        ws_manager.broadcast("zip_job_update", {"repo_id": repo_id, "status": status})
+    )
     zip_queue.start()
     
     yield
@@ -1246,13 +1296,24 @@ async def deploy_repository(
 
 # ============ HEALTH & STATS ============
 
+@app.websocket("/api/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """Real-time event stream for clone/import/zip job updates."""
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()   # keep-alive; client can send pings
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+
 @app.get("/api/health")
 async def health_check(db: Session = Depends(get_db)):
     """Health check endpoint"""
     try:
         db.execute(text("SELECT 1"))
         return {"status": "healthy", "database": "connected"}
-    except:
+    except Exception:
         return {"status": "unhealthy", "database": "disconnected"}
 
 
