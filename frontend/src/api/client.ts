@@ -66,6 +66,9 @@ export const repositoryApi = {
   clone: (id: number) =>
     api.post(`/repositories/${id}/clone`),
 
+  enqueueZip: (id: number) =>
+    api.post(`/repositories/${id}/zip`),
+
   sync: (id: number) =>
     api.post(`/repositories/${id}/sync`),
 

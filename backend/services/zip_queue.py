@@ -25,7 +25,8 @@ _STATUS_FAILED = "failed"
 
 
 class ZipJob:
-    __slots__ = ("repo_id", "repo_url", "zip_path", "status", "queued_at", "started_at", "finished_at", "error")
+    __slots__ = ("repo_id", "repo_url", "zip_path", "status", "queued_at", "started_at",
+                 "finished_at", "error", "bytes_downloaded", "bytes_total")
 
     def __init__(self, repo_id: int, repo_url: str, zip_path: str):
         self.repo_id = repo_id
@@ -36,11 +37,21 @@ class ZipJob:
         self.started_at: Optional[datetime] = None
         self.finished_at: Optional[datetime] = None
         self.error: Optional[str] = None
+        self.bytes_downloaded: int = 0
+        self.bytes_total: int = 0
+
+    def progress_pct(self) -> int:
+        if self.bytes_total:
+            return min(100, int(self.bytes_downloaded / self.bytes_total * 100))
+        return 0 if self.status != _STATUS_DONE else 100
 
     def to_dict(self) -> dict:
         return {
             "repo_id": self.repo_id,
             "status": self.status,
+            "bytes_downloaded": self.bytes_downloaded,
+            "bytes_total": self.bytes_total,
+            "progress_pct": self.progress_pct(),
             "queued_at": self.queued_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,

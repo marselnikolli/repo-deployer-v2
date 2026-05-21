@@ -60,12 +60,14 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/repo_deployer
       REDIS_URL: redis://redis:6379/0
       MIRROR_DIR: /app/mirrors
+      GITHUB_ZIP_DIR: /app/github-zip-files
       LOG_LEVEL: INFO
       DESKTOP_BACKUP_PATH: /host_desktop
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
       - mirrors:/app/mirrors
+      - github_zips:/app/github-zip-files
       - ${BACKUP_HOST_PATH:-${HOME}/Desktop}:/host_desktop
     restart: unless-stopped
     deploy:
@@ -112,6 +114,8 @@ volumes:
   postgres_data:
     driver: local
   mirrors:
+    driver: local
+  github_zips:
     driver: local
 
 networks:

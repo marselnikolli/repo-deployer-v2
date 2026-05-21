@@ -320,6 +320,39 @@ export function RepositoryList() {
     }
   }
 
+  const handleEnqueueZip = async (e: React.MouseEvent, repoId: number) => {
+    e.stopPropagation()
+    try {
+      await repositoryApi.enqueueZip(repoId)
+      toast.success('ZIP archive queued')
+      qc.invalidateQueries({ queryKey: ['repositories'] })
+    } catch {
+      toast.error('Failed to queue ZIP')
+    }
+  }
+
+  const handleDownloadZip = async (e: React.MouseEvent, repoId: number, repoName: string) => {
+    e.stopPropagation()
+    try {
+      const res = await fetch(`/api/repositories/${repoId}/zip/download`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'ZIP not available' }))
+        toast.error(err.detail || 'ZIP not available')
+        qc.invalidateQueries({ queryKey: ['repositories'] })
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${repoName.split('/').pop()}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to download ZIP')
+    }
+  }
+
   const handleBulkClone = async () => {
     if (selectedIds.size === 0) return
 
@@ -965,19 +998,39 @@ export function RepositoryList() {
                             Deployed
                           </span>
                         )}
-                        {/* ZIP archive status */}
-                        {repo?.zip_status && repo.zip_status !== 'none' && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit ${
-                            repo.zip_status === 'done'        ? 'bg-blue-50 text-blue-700' :
-                            repo.zip_status === 'in_progress' ? 'bg-yellow-50 text-yellow-700' :
-                            repo.zip_status === 'failed'      ? 'bg-red-50 text-red-700' :
-                            'bg-gray-100 text-gray-500'
-                          }`}>
+                        {/* ZIP archive — download if ready, enqueue if not */}
+                        {repo?.zip_status === 'done' ? (
+                          <button
+                            onClick={(e) => handleDownloadZip(e, repo.id, repo.name)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                            title="Download ZIP archive"
+                          >
                             <Download className="size-3" />
-                            {repo.zip_status === 'done' ? 'ZIP ready' :
-                             repo.zip_status === 'in_progress' ? 'Zipping…' :
-                             repo.zip_status === 'failed' ? 'ZIP failed' : repo.zip_status}
+                            Download ZIP
+                          </button>
+                        ) : repo?.zip_status === 'in_progress' || repo?.zip_status === 'pending' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-yellow-50 text-yellow-700">
+                            <Loader2 className="size-3 animate-spin" />
+                            Zipping…
                           </span>
+                        ) : repo?.zip_status === 'failed' ? (
+                          <button
+                            onClick={(e) => handleEnqueueZip(e, repo.id)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                            title="ZIP failed — click to retry"
+                          >
+                            <Download className="size-3" />
+                            ZIP failed — retry
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => handleEnqueueZip(e, repo.id)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                            title="Create ZIP archive"
+                          >
+                            <Download className="size-3" />
+                            Get ZIP
+                          </button>
                         )}
                       </div>
                     </td>

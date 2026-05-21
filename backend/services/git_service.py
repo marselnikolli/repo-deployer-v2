@@ -76,7 +76,7 @@ def get_default_branch(url: str) -> str:
     return "main"
 
 
-def download_repo_as_zip(url: str, path: str, timeout_seconds: int = 300) -> bool:
+def download_repo_as_zip(url: str, path: str, timeout_seconds: int = 300, progress_callback=None) -> bool:
     """
     Download repository as ZIP file from GitHub and store it
     
@@ -110,16 +110,28 @@ def download_repo_as_zip(url: str, path: str, timeout_seconds: int = 300) -> boo
             
             # Download the ZIP file
             response = requests.get(download_url, timeout=timeout_seconds, stream=True)
-            
+
             if response.status_code != 200:
                 print(f"Failed to download repository: HTTP {response.status_code}", flush=True)
                 return False
-            
+
+            total_bytes = int(response.headers.get("content-length", 0))
+            downloaded = 0
+            last_pct = -1
+
             # Download directly to target path
             with open(path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_bytes:
+                            pct = int(downloaded / total_bytes * 100)
+                            if pct >= last_pct + 5:  # broadcast every 5%
+                                last_pct = pct
+                                progress_callback(downloaded, total_bytes)
+            if progress_callback:
+                progress_callback(downloaded, total_bytes or downloaded)  # final
             
             print(f"ZIP downloaded and stored at {path}", flush=True)
             

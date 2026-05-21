@@ -36,11 +36,13 @@ services:
   api:
     environment:
       DESKTOP_BACKUP_PATH: /host_desktop
+      GITHUB_ZIP_DIR: /app/github-zip-files
       LOG_LEVEL: WARNING
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
       - mirrors:/app/mirrors
+      - github_zips:/app/github-zip-files
       - backups:/host_desktop
     # No --reload in production
     command: uvicorn main:app --host 0.0.0.0 --port 8000
@@ -92,4 +94,6 @@ volumes:
   backups:
     driver: local
   db_backups:
+    driver: local
+  github_zips:
     driver: local

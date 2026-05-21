@@ -74,11 +74,18 @@ def ws_broadcast_sync(event_type: str, data: dict | None = None):
 
 
 def _repo_zip_path(repos_dir: str, repo_name: str) -> str:
-    """Return {repos_dir}/{owner}/{name}/{name}.zip given 'owner/name' or 'name'."""
+    """Return path inside the dedicated github-zip-files store.
+
+    Uses GITHUB_ZIP_DIR env var (default /app/github-zip-files).
+    repos_dir is accepted for backwards-compat but ignored.
+    Files are stored flat as  {zip_dir}/{owner}__{name}.zip.
+    """
+    zip_dir = os.getenv("GITHUB_ZIP_DIR", "/app/github-zip-files")
     parts = repo_name.split('/', 1)
     owner = parts[0] if len(parts) == 2 else "unknown"
     name  = parts[1] if len(parts) == 2 else parts[0]
-    return os.path.join(repos_dir, owner, name, f"{name}.zip")
+    os.makedirs(zip_dir, exist_ok=True)
+    return os.path.join(zip_dir, f"{owner}__{name}.zip")
 
 
 # Simple Pydantic models for request bodies
@@ -518,16 +525,51 @@ async def enqueue_zip(
     return {"enqueued": enqueued, **status}
 
 
-@app.get("/api/repositories/{repo_id}/zip/status")
-async def get_zip_status(repo_id: int, db: Session = Depends(get_db)):
-    """Get the ZIP archive status for a repository."""
-    status = zip_queue.get_status(repo_id)
-    if status:
-        return status
-    # Fall back to database value
+@app.get("/api/repositories/{repo_id}/zip/download")
+async def download_zip(repo_id: int, db: Session = Depends(get_db)):
+    """Stream the ZIP archive for a repository as a file download.
+    If the file is missing despite the DB saying 'done', resets status so the UI self-corrects.
+    """
+    from fastapi.responses import FileResponse
+
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
+
+    zip_path = repo.zip_path or _repo_zip_path(os.getenv("REPOS_DIR", "/app/repos"), repo.name)
+
+    if not os.path.isfile(zip_path):
+        # File is gone — reset DB so the badge flips back to "Get ZIP"
+        repo.zip_status = None
+        repo.zip_path = None
+        db.commit()
+        raise HTTPException(status_code=404, detail="ZIP file not found on server — it may have been deleted. Click 'Get ZIP' to recreate it.")
+
+    parts = repo.name.split("/", 1)
+    filename = f"{parts[-1]}.zip"
+    return FileResponse(zip_path, media_type="application/zip", filename=filename)
+
+
+@app.get("/api/repositories/{repo_id}/zip/status")
+async def get_zip_status(repo_id: int, db: Session = Depends(get_db)):
+    """Get ZIP status, verifying actual disk state so the UI always reflects reality."""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Live queue status takes priority
+    queue_status = zip_queue.get_status(repo_id)
+    if queue_status and queue_status.get("status") in ("pending", "in_progress"):
+        return queue_status
+
+    # DB says done — verify the file actually exists
+    if repo.zip_status == "done":
+        zip_path = repo.zip_path or _repo_zip_path(os.getenv("REPOS_DIR", "/app/repos"), repo.name)
+        if not os.path.isfile(zip_path):
+            repo.zip_status = None
+            repo.zip_path = None
+            db.commit()
+
     return {"repo_id": repo_id, "status": repo.zip_status or "none", "zip_path": repo.zip_path}
 
 
