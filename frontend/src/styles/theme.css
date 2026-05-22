@@ -240,28 +240,6 @@
   --focus-ring-error: 0 0 0 4px rgba(240, 68, 56, 0.24);
 
   /* Component-specific semantic colors for dark mode */
-  --color-blue-bg: var(--color-blue-100);
-  --color-blue-text: var(--color-blue-900);
-  --color-yellow-bg: var(--color-yellow-100);
-  --color-yellow-text: var(--color-yellow-900);
-  --color-green-bg: var(--color-success-100);
-  --color-green-text: var(--color-success-900);
-  --color-red-bg: var(--color-error-100);
-  --color-red-text: var(--color-error-900);
-  --color-purple-bg: var(--color-purple-100);
-  --color-purple-text: var(--color-purple-900);
-  --color-orange-bg: var(--color-orange-100);
-  --color-orange-text: var(--color-orange-900);
-
-  --color-blue-icon: var(--color-blue-600);
-  --color-yellow-icon: var(--color-yellow-600);
-  --color-green-icon: var(--color-success-600);
-  --color-red-icon: var(--color-error-600);
-  --color-purple-icon: var(--color-purple-600);
-  --color-orange-icon: var(--color-orange-600);
-}
-
-.dark-mode {
   --color-blue-bg: var(--color-blue-900);
   --color-blue-text: var(--color-blue-100);
   --color-yellow-bg: var(--color-yellow-900);

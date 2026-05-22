@@ -31,19 +31,19 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-lg p-6 max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle size={20} className="text-red-600" />
+            <div className="w-8 h-8 rounded-full bg-[var(--color-error-100)] flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={20} className="text-[var(--color-error-600)]" />
             </div>
-            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <h2 className="text-lg font-semibold text-[var(--color-fg-primary)]">{title}</h2>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-[var(--color-fg-disabled)] hover:text-[var(--color-fg-tertiary)] transition-colors"
             aria-label="Close"
           >
             <X size={20} />
@@ -52,14 +52,14 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({
 
         {/* Message */}
         <div className="mb-6">
-          <p className="text-gray-700 text-sm whitespace-pre-wrap break-words">{message}</p>
+          <p className="text-[var(--color-fg-secondary)] text-sm whitespace-pre-wrap break-words">{message}</p>
         </div>
 
         {/* Actions */}
         <div className="flex gap-3 justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+            className="px-4 py-2 text-[var(--color-fg-secondary)] bg-[var(--color-bg-tertiary)] rounded-[var(--radius-md)] hover:bg-[var(--color-border-secondary)] transition-colors font-medium"
           >
             Close
           </button>

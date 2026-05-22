@@ -136,14 +136,14 @@ export function NotificationCenter() {
 
   const getTypeColor = (type: string) => {
     const colors: Record<string, string> = {
-      success: 'bg-green-50 text-green-900 border-green-200',
-      error: 'bg-red-50 text-red-900 border-red-200',
-      warning: 'bg-yellow-50 text-yellow-900 border-yellow-200',
-      info: 'bg-blue-50 text-blue-900 border-blue-200',
-      deployment: 'bg-purple-50 text-purple-900 border-purple-200',
-      health_check: 'bg-orange-50 text-orange-900 border-orange-200',
-      sync: 'bg-cyan-50 text-cyan-900 border-cyan-200',
-      import: 'bg-indigo-50 text-indigo-900 border-indigo-200'
+      success: 'bg-[var(--color-success-50)] text-[var(--color-success-700)] border-[var(--color-success-200)]',
+      error: 'bg-[var(--color-error-50)] text-[var(--color-error-700)] border-[var(--color-error-200)]',
+      warning: 'bg-[var(--color-warning-50)] text-[var(--color-warning-700)] border-[var(--color-warning-200)]',
+      info: 'bg-[var(--color-brand-50)] text-[var(--color-brand-700)] border-[var(--color-brand-200)]',
+      deployment: 'bg-[var(--color-purple-50)] text-[var(--color-purple-700)] border-[var(--color-purple-100)]',
+      health_check: 'bg-[var(--color-orange-50)] text-[var(--color-orange-700)] border-[var(--color-orange-100)]',
+      sync: 'bg-[var(--color-brand-50)] text-[var(--color-brand-700)] border-[var(--color-brand-200)]',
+      import: 'bg-[var(--color-indigo-50)] text-[var(--color-indigo-700)] border-[var(--color-indigo-100)]',
     }
     return colors[type] || colors.info
   }
@@ -160,12 +160,12 @@ export function NotificationCenter() {
 
   const getDeliveryStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      sent: 'text-green-600',
-      delivered: 'text-green-500',
-      failed: 'text-red-600',
-      pending: 'text-yellow-600'
+      sent: 'text-[var(--color-success-600)]',
+      delivered: 'text-[var(--color-success-500)]',
+      failed: 'text-[var(--color-error-600)]',
+      pending: 'text-[var(--color-warning-600)]',
     }
-    return colors[status] || 'text-gray-600'
+    return colors[status] || 'text-[var(--color-fg-tertiary)]'
   }
 
   const unreadCount = stats?.unread || 0
@@ -175,7 +175,7 @@ export function NotificationCenter() {
       {/* Bell Icon Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition"
+        className="relative p-2 text-[var(--color-fg-tertiary)] hover:text-[var(--color-fg-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition"
         title="Notifications"
       >
         <Bell size={20} />
@@ -188,16 +188,16 @@ export function NotificationCenter() {
 
       {/* Notification Drawer */}
       {isOpen && (
-        <div className="absolute right-0 top-12 w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-96 overflow-hidden flex flex-col">
+        <div className="absolute right-0 top-12 w-96 bg-[var(--color-bg-primary)] border border-[var(--color-border-secondary)] rounded-[var(--radius-lg)] shadow-xl z-50 max-h-96 overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)]">
             <div>
-              <h3 className="font-semibold text-gray-900">Notifications</h3>
-              {stats && <p className="text-xs text-gray-600">{stats.unread} unread</p>}
+              <h3 className="font-semibold text-[var(--color-fg-primary)]">Notifications</h3>
+              {stats && <p className="text-xs text-[var(--color-fg-tertiary)]">{stats.unread} unread</p>}
             </div>
             <button
               onClick={() => setIsOpen(false)}
-              className="p-1 hover:bg-gray-200 rounded transition"
+              className="p-1 hover:bg-[var(--color-bg-tertiary)] rounded transition text-[var(--color-fg-tertiary)]"
             >
               <X size={16} />
             </button>
@@ -206,32 +206,32 @@ export function NotificationCenter() {
           {/* Notification List */}
           <div className="overflow-y-auto flex-1">
             {notifications.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
+              <div className="p-8 text-center text-[var(--color-fg-quaternary)]">
                 <Bell size={32} className="mx-auto mb-2 opacity-50" />
                 <p>No notifications yet</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-[var(--color-border-secondary)]">
                 {notifications.slice(0, 10).map(notification => (
                   <div
                     key={notification.id}
                     className={`p-4 border-l-4 transition ${
                       notification.read
-                        ? 'bg-gray-50 border-gray-300'
+                        ? 'bg-[var(--color-bg-secondary)] border-[var(--color-border-primary)]'
                         : `${getTypeColor(notification.type)} border-l-4`
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{notification.title}</p>
-                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                        <p className="font-medium text-sm truncate text-[var(--color-fg-primary)]">{notification.title}</p>
+                        <p className="text-xs text-[var(--color-fg-tertiary)] mt-1 line-clamp-2">
                           {notification.content}
                         </p>
-                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-2 mt-2 text-xs text-[var(--color-fg-quaternary)]">
                           <span className={`inline-block px-2 py-0.5 rounded ${getDeliveryStatusColor(notification.delivery_status)}`}>
                             {notification.delivery_status}
                           </span>
-                          <span className="text-gray-400">
+                          <span className="text-[var(--color-fg-disabled)]">
                             {new Date(notification.created_at).toLocaleDateString()}
                           </span>
                         </div>
@@ -240,18 +240,18 @@ export function NotificationCenter() {
                         {!notification.read && (
                           <button
                             onClick={() => markAsRead(notification.id)}
-                            className="p-1 hover:bg-gray-300 rounded transition"
+                            className="p-1 hover:bg-[var(--color-bg-tertiary)] rounded transition"
                             title="Mark as read"
                           >
-                            <Check size={14} className="text-green-600" />
+                            <Check size={14} className="text-[var(--color-success-600)]" />
                           </button>
                         )}
                         <button
                           onClick={() => deleteNotification(notification.id)}
-                          className="p-1 hover:bg-gray-300 rounded transition"
+                          className="p-1 hover:bg-[var(--color-bg-tertiary)] rounded transition"
                           title="Delete"
                         >
-                          <Trash2 size={14} className="text-red-600" />
+                          <Trash2 size={14} className="text-[var(--color-error-600)]" />
                         </button>
                       </div>
                     </div>
@@ -263,18 +263,18 @@ export function NotificationCenter() {
 
           {/* Footer */}
           {notifications.length > 0 && (
-            <div className="border-t border-gray-200 p-3 bg-gray-50 flex gap-2">
+            <div className="border-t border-[var(--color-border-secondary)] p-3 bg-[var(--color-bg-secondary)] flex gap-2">
               <button
                 onClick={markAllAsRead}
                 disabled={!stats || stats.unread === 0}
-                className="flex-1 px-3 py-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                className="flex-1 px-3 py-2 text-xs bg-[var(--color-brand-50)] hover:bg-[var(--color-brand-100)] text-[var(--color-brand-700)] rounded transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
               >
                 <CheckCheck size={14} />
                 Read All
               </button>
               <button
                 onClick={clearNotifications}
-                className="flex-1 px-3 py-2 text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 rounded transition flex items-center justify-center gap-1"
+                className="flex-1 px-3 py-2 text-xs bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-border-secondary)] text-[var(--color-fg-secondary)] rounded transition flex items-center justify-center gap-1"
               >
                 <Trash2 size={14} />
                 Clear

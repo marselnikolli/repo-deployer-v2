@@ -197,22 +197,22 @@ export function SearchPage() {
 
   const getHealthStatusColor = (status?: string) => {
     const colors: Record<string, string> = {
-      healthy: 'bg-green-50 text-green-700 border-green-200',
-      archived: 'bg-gray-50 text-gray-700 border-gray-200',
-      not_found: 'bg-red-50 text-red-700 border-red-200'
+      healthy: 'bg-[var(--color-success-50)] text-[var(--color-success-700)] border-[var(--color-success-200)]',
+      archived: 'bg-[var(--color-bg-secondary)] text-[var(--color-fg-secondary)] border-[var(--color-border-secondary)]',
+      not_found: 'bg-[var(--color-error-50)] text-[var(--color-error-700)] border-[var(--color-error-200)]'
     }
-    return colors[status || ''] || 'bg-blue-50 text-blue-700 border-blue-200'
+    return colors[status || ''] || 'bg-[var(--color-brand-50)] text-[var(--color-brand-700)] border-[var(--color-brand-200)]'
   }
 
   const totalPages = Math.ceil(totalResults / resultsPerPage)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[var(--color-bg-secondary)]">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Repository Search</h1>
-          
+      <div className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border-secondary)] sticky top-0 z-10">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <h1 className="text-3xl font-bold text-[var(--color-fg-primary)] mb-4">Repository Search</h1>
+
           {/* Search Bar */}
           <form onSubmit={handleSearch} className="flex gap-2">
             <div className="flex-1 relative">
@@ -221,23 +221,23 @@ export function SearchPage() {
                 placeholder="Search repositories by name, description, or URL..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2 pl-10 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent"
               />
-              <Search size={18} className="absolute left-3 top-2.5 text-gray-400" />
+              <Search size={18} className="absolute left-3 top-2.5 text-[var(--color-fg-disabled)]" />
             </div>
             <button
               type="submit"
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+              className="px-6 py-2 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-white rounded-[var(--radius-lg)] font-medium transition"
             >
               Search
             </button>
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
-              className={`px-4 py-2 border rounded-lg font-medium transition ${
+              className={`px-4 py-2 border rounded-[var(--radius-lg)] font-medium transition ${
                 showFilters
-                  ? 'bg-blue-50 border-blue-300 text-blue-700'
-                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                  ? 'bg-[var(--color-brand-50)] border-[var(--color-brand-300)] text-[var(--color-brand-700)]'
+                  : 'bg-[var(--color-bg-primary)] border-[var(--color-border-primary)] text-[var(--color-fg-secondary)] hover:bg-[var(--color-bg-secondary)]'
               }`}
             >
               <Filter size={18} />
@@ -245,7 +245,7 @@ export function SearchPage() {
             <button
               type="button"
               onClick={() => setShowSearchHistory(true)}
-              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg font-medium transition"
+              className="px-4 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border-primary)] text-[var(--color-fg-secondary)] hover:bg-[var(--color-bg-secondary)] rounded-[var(--radius-lg)] font-medium transition"
               title="View search history"
             >
               <Clock size={18} />
@@ -253,7 +253,7 @@ export function SearchPage() {
             <button
               type="button"
               onClick={() => setShowSavedSearches(true)}
-              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg font-medium transition"
+              className="px-4 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border-primary)] text-[var(--color-fg-secondary)] hover:bg-[var(--color-bg-secondary)] rounded-[var(--radius-lg)] font-medium transition"
               title="Manage saved searches"
             >
               <BookmarkIcon size={18} />
@@ -264,16 +264,16 @@ export function SearchPage() {
 
       {/* Filters Panel */}
       {showFilters && filterOptions && (
-        <div className="bg-white border-b border-gray-200 sticky top-20 z-10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border-secondary)] sticky top-20 z-10">
+          <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Language Filter */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Language</label>
                 <select
                   value={filters.language}
                   onChange={e => handleFilterChange('language', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 >
                   <option value="">All Languages</option>
                   {filterOptions.languages.map(lang => (
@@ -284,11 +284,11 @@ export function SearchPage() {
 
               {/* Category Filter */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Category</label>
                 <select
                   value={filters.category}
                   onChange={e => handleFilterChange('category', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 >
                   <option value="">All Categories</option>
                   {filterOptions.categories.map(cat => (
@@ -299,11 +299,11 @@ export function SearchPage() {
 
               {/* Health Status Filter */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Health Status</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Health Status</label>
                 <select
                   value={filters.healthStatus}
                   onChange={e => handleFilterChange('healthStatus', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 >
                   <option value="">All Status</option>
                   {filterOptions.health_statuses.map(status => (
@@ -314,38 +314,38 @@ export function SearchPage() {
 
               {/* Min Stars */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Min Stars</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Min Stars</label>
                 <input
                   type="number"
                   min="0"
                   max={filterOptions.max_stars}
                   value={filters.minStars}
                   onChange={e => handleFilterChange('minStars', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                   placeholder="0"
                 />
               </div>
 
               {/* Max Stars */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Max Stars</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Max Stars</label>
                 <input
                   type="number"
                   min="0"
                   value={filters.maxStars}
                   onChange={e => handleFilterChange('maxStars', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                   placeholder={filterOptions.max_stars.toString()}
                 />
               </div>
 
               {/* Fork Filter */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Fork Status</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Fork Status</label>
                 <select
                   value={filters.isFork}
                   onChange={e => handleFilterChange('isFork', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 >
                   <option value="">All Repos</option>
                   <option value="false">Non-Forks Only</option>
@@ -355,11 +355,11 @@ export function SearchPage() {
 
               {/* Archive Filter */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Archive Status</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Archive Status</label>
                 <select
                   value={filters.isArchived}
                   onChange={e => handleFilterChange('isArchived', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 >
                   <option value="">All Repos</option>
                   <option value="false">Active Only</option>
@@ -369,11 +369,11 @@ export function SearchPage() {
 
               {/* Sort By */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Sort By</label>
                 <select
                   value={filters.sortBy}
                   onChange={e => handleFilterChange('sortBy', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 >
                   {filterOptions.sort_options.map(opt => (
                     <option key={opt} value={opt}>{opt.replace(/_/g, ' ').charAt(0).toUpperCase() + opt.replace(/_/g, ' ').slice(1)}</option>
@@ -383,11 +383,11 @@ export function SearchPage() {
 
               {/* Sort Order */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Order</label>
+                <label className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-2">Order</label>
                 <select
                   value={filters.sortOrder}
                   onChange={e => handleFilterChange('sortOrder', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 >
                   <option value="asc">Ascending</option>
                   <option value="desc">Descending</option>
@@ -398,7 +398,7 @@ export function SearchPage() {
             {/* Reset Filters Button */}
             <button
               onClick={resetFilters}
-              className="mt-4 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-lg font-medium transition"
+              className="mt-4 px-4 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-border-secondary)] text-[var(--color-fg-primary)] rounded-[var(--radius-lg)] font-medium transition"
             >
               Reset Filters
             </button>
@@ -407,11 +407,11 @@ export function SearchPage() {
       )}
 
       {/* Results */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Results Info */}
         {totalResults > 0 && (
-          <div className="mb-6 text-sm text-gray-600">
-            Found <span className="font-semibold text-gray-900">{totalResults}</span> repositories
+          <div className="mb-6 text-sm text-[var(--color-fg-tertiary)]">
+            Found <span className="font-semibold text-[var(--color-fg-primary)]">{totalResults}</span> repositories
             {searchQuery && <> matching "<span className="font-semibold">{searchQuery}</span>"</>}
           </div>
         )}
@@ -419,15 +419,15 @@ export function SearchPage() {
         {/* Loading State */}
         {loading && (
           <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border border-gray-300 border-t-blue-600"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border border-[var(--color-border-primary)] border-t-[var(--color-brand-600)]"></div>
           </div>
         )}
 
         {/* Results List */}
         {!loading && results.length === 0 && (
           <div className="text-center py-12">
-            <Search size={48} className="mx-auto mb-4 text-gray-400" />
-            <p className="text-gray-600 text-lg">
+            <Search size={48} className="mx-auto mb-4 text-[var(--color-fg-disabled)]" />
+            <p className="text-[var(--color-fg-tertiary)] text-lg">
               {searchQuery || Object.values(filters).some(v => v !== '' && v !== 'name' && v !== 'asc')
                 ? 'No repositories found matching your criteria'
                 : 'Enter a search query to get started'}
@@ -441,32 +441,32 @@ export function SearchPage() {
               {results.map(repo => (
                 <div
                   key={repo.id}
-                  className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
+                  className="bg-[var(--color-bg-primary)] border border-[var(--color-border-secondary)] rounded-[var(--radius-lg)] p-4 hover:shadow-md transition"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-semibold text-gray-900 truncate">
+                      <h3 className="text-lg font-semibold text-[var(--color-fg-primary)] truncate">
                         {repo.title || repo.name}
                       </h3>
-                      <p className="text-sm text-gray-500 truncate">{repo.url}</p>
+                      <p className="text-sm text-[var(--color-fg-quaternary)] truncate">{repo.url}</p>
                       {repo.description && (
-                        <p className="text-sm text-gray-600 mt-2 line-clamp-2">{repo.description}</p>
+                        <p className="text-sm text-[var(--color-fg-tertiary)] mt-2 line-clamp-2">{repo.description}</p>
                       )}
                       <div className="flex flex-wrap gap-2 mt-3">
                         {repo.language && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--color-bg-tertiary)] text-[var(--color-fg-secondary)] rounded text-xs font-medium">
                             <Code size={12} />
                             {repo.language}
                           </span>
                         )}
                         {repo.github_stars !== undefined && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded text-xs font-medium">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--color-warning-50)] text-[var(--color-warning-700)] rounded text-xs font-medium">
                             <Star size={12} />
                             {repo.github_stars.toLocaleString()}
                           </span>
                         )}
                         {repo.github_updated_at && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--color-brand-50)] text-[var(--color-brand-700)] rounded text-xs font-medium">
                             <Calendar size={12} />
                             {new Date(repo.github_updated_at).toLocaleDateString()}
                           </span>
@@ -477,12 +477,12 @@ export function SearchPage() {
                           </span>
                         )}
                         {repo.is_fork && (
-                          <span className="inline-flex items-center px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium border border-purple-200">
+                          <span className="inline-flex items-center px-2 py-1 bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded text-xs font-medium border border-[var(--color-purple-50)]">
                             Fork
                           </span>
                         )}
                         {repo.archived && (
-                          <span className="inline-flex items-center px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium border border-gray-200">
+                          <span className="inline-flex items-center px-2 py-1 bg-[var(--color-bg-tertiary)] text-[var(--color-fg-secondary)] rounded text-xs font-medium border border-[var(--color-border-secondary)]">
                             Archived
                           </span>
                         )}
@@ -499,20 +499,20 @@ export function SearchPage() {
                 <button
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                   disabled={currentPage === 1}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  className="flex items-center gap-2 px-4 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                 >
                   <ChevronLeft size={16} />
                   Previous
                 </button>
 
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-[var(--color-fg-tertiary)]">
                   Page <span className="font-semibold">{currentPage}</span> of <span className="font-semibold">{totalPages}</span>
                 </div>
 
                 <button
                   onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                   disabled={currentPage === totalPages}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  className="flex items-center gap-2 px-4 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                 >
                   Next
                   <ChevronRight size={16} />

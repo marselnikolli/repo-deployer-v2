@@ -693,7 +693,7 @@ export function RepositoryList() {
               setFilterCategory(e.target.value || null)
               setCurrentPage(1)
             }}
-            className="px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 hover:border-[var(--color-brand-300)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)]"
+            className="px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] hover:border-[var(--color-brand-300)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)]"
           >
             <option value="" className="text-[var(--color-fg-primary)] dark:text-gray-100">All Categories</option>
             {categories.filter(Boolean).map((cat) => (
@@ -707,7 +707,7 @@ export function RepositoryList() {
             placeholder="Search repositories... (press /)"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-white dark:bg-slate-800 text-[var(--color-fg-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] min-w-[200px]"
+            className="px-3 py-2 text-[length:var(--text-sm)] border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] min-w-[200px]"
           />
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -787,7 +787,7 @@ export function RepositoryList() {
             <button
               onClick={handleDeleteAll}
               disabled={loading}
-              className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 border border-red-700 rounded-[var(--radius-md)] transition-colors flex items-center gap-2"
+              className="px-4 py-2 text-[length:var(--text-sm)] font-medium text-white bg-[var(--color-error-600)] hover:bg-[var(--color-error-700)] disabled:opacity-50 border border-[var(--color-error-700)] rounded-[var(--radius-md)] transition-colors flex items-center gap-2"
             >
               <Trash2 className="size-4" />
               Delete All
@@ -850,7 +850,7 @@ export function RepositoryList() {
             </button>
             <button
               onClick={handleBulkDeleteClones}
-              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-orange-700 bg-orange-50 border border-orange-300 rounded-[var(--radius-md)] hover:bg-orange-100 transition-colors"
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-warning-700)] bg-[var(--color-warning-50)] border border-[var(--color-warning-200)] rounded-[var(--radius-md)] hover:bg-[var(--color-warning-100)] transition-colors"
             >
               <GitBranch className="size-4 inline mr-1" />
               Delete clone
@@ -871,7 +871,7 @@ export function RepositoryList() {
             </button>
             <button
               onClick={handleBulkDeleteZips}
-              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-orange-700 bg-orange-50 border border-orange-300 rounded-[var(--radius-md)] hover:bg-orange-100 transition-colors"
+              className="px-3 py-1.5 text-[length:var(--text-sm)] font-medium text-[var(--color-warning-700)] bg-[var(--color-warning-50)] border border-[var(--color-warning-200)] rounded-[var(--radius-md)] hover:bg-[var(--color-warning-100)] transition-colors"
             >
               <Trash2 className="size-4 inline mr-1" />
               Delete ZIP
@@ -1083,8 +1083,8 @@ export function RepositoryList() {
                         {/* Health status badge */}
                         {repo?.health_status && (
                           <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit ${
-                            repo.health_status === 'healthy' ? 'bg-green-100 text-green-700' :
-                            repo.health_status === 'archived' ? 'bg-gray-100 text-gray-700' :
+                            repo.health_status === 'healthy' ? 'bg-[var(--color-success-50)] text-[var(--color-success-700)]' :
+                            repo.health_status === 'archived' ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-fg-tertiary)]' :
                             repo.health_status === 'not_found' ? 'bg-red-100 text-red-700' :
                             'bg-blue-100 text-blue-700'
                           }`}>
@@ -1117,9 +1117,9 @@ export function RepositoryList() {
                                 ? `Zipping… ${zipProgress[repo.id].pct}%`
                                 : 'Zipping…'}
                             </span>
-                            <div className="w-full h-1.5 bg-yellow-100 rounded-full overflow-hidden">
+                            <div className="w-full h-1.5 bg-[var(--color-warning-100)] rounded-full overflow-hidden">
                               <div
-                                className="h-full bg-yellow-400 rounded-full transition-all duration-300"
+                                className="h-full bg-[var(--color-warning-400)] rounded-full transition-all duration-300"
                                 style={{ width: `${zipProgress[repo.id]?.pct ?? 0}%` }}
                               />
                             </div>
@@ -1159,7 +1159,7 @@ export function RepositoryList() {
                         <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
                           {(repo?.stars ?? 0) > 0 && (
                             <span className="inline-flex items-center gap-1">
-                              <Star className="size-3 text-yellow-500" />
+                              <Star className="size-3 text-[var(--color-warning-400)]" />
                               {repo.stars!.toLocaleString()}
                             </span>
                           )}

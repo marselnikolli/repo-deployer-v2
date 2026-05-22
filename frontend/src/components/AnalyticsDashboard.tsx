@@ -65,7 +65,7 @@ export function AnalyticsDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border border-gray-300 border-t-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border border-[var(--color-border-primary)] border-t-[var(--color-brand-600)]"></div>
       </div>
     );
   }

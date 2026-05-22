@@ -145,16 +145,16 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-96 flex flex-col">
+      <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-lg)] shadow-xl max-w-2xl w-full mx-4 max-h-96 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-secondary)]">
           <div className="flex items-center gap-2">
-            <Star size={20} className="text-gray-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Saved Searches</h2>
+            <Star size={20} className="text-[var(--color-fg-tertiary)]" />
+            <h2 className="text-lg font-semibold text-[var(--color-fg-primary)]">Saved Searches</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded transition"
+            className="p-1 hover:bg-[var(--color-bg-tertiary)] rounded transition"
           >
             <X size={20} />
           </button>
@@ -163,9 +163,9 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="p-4 text-center text-gray-500">Loading...</div>
+            <div className="p-4 text-center text-[var(--color-fg-quaternary)]">Loading...</div>
           ) : showCreateForm ? (
-            <div className="p-4 border-b border-gray-200">
+            <div className="p-4 border-b border-[var(--color-border-secondary)]">
               <h3 className="font-semibold mb-3">
                 {editingId ? 'Edit Search' : 'Create New Search'}
               </h3>
@@ -177,7 +177,7 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent"
                 />
                 <input
                   type="text"
@@ -186,7 +186,7 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
                   onChange={(e) =>
                     setFormData({ ...formData, description: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent"
                 />
                 <input
                   type="text"
@@ -195,7 +195,7 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
                   onChange={(e) =>
                     setFormData({ ...formData, query: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent"
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <input
@@ -205,7 +205,7 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
                     onChange={(e) =>
                       setFormData({ ...formData, category: e.target.value })
                     }
-                    className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-3 py-2 border border-[var(--color-border-primary)] rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent"
                   />
                   <input
                     type="text"
@@ -214,19 +214,19 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
                     onChange={(e) =>
                       setFormData({ ...formData, language: e.target.value })
                     }
-                    className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-3 py-2 border border-[var(--color-border-primary)] rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent"
                   />
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={saveSearch}
-                    className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition"
+                    className="flex-1 px-3 py-2 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-white rounded text-sm font-medium transition"
                   >
                     {editingId ? 'Update' : 'Save'} Search
                   </button>
                   <button
                     onClick={resetForm}
-                    className="flex-1 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded text-sm font-medium transition"
+                    className="flex-1 px-3 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-border-secondary)] text-[var(--color-fg-primary)] rounded text-sm font-medium transition"
                   >
                     Cancel
                   </button>
@@ -235,51 +235,51 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
             </div>
           ) : searches.length === 0 ? (
             <div className="p-4 text-center">
-              <p className="text-gray-500 mb-3">No saved searches yet</p>
+              <p className="text-[var(--color-fg-quaternary)] mb-3">No saved searches yet</p>
               <button
                 onClick={() => setShowCreateForm(true)}
-                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition inline-flex items-center gap-1"
+                className="px-3 py-2 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-white rounded text-sm font-medium transition inline-flex items-center gap-1"
               >
                 <Plus size={16} /> Create Search
               </button>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-[var(--color-border-tertiary)]">
               {searches.map(search => (
                 <div
                   key={search.id}
-                  className="p-3 hover:bg-gray-50 transition"
+                  className="p-3 hover:bg-[var(--color-bg-secondary)] transition"
                 >
                   <div
                     className="flex-1 cursor-pointer mb-2"
                     onClick={() => useSearch(search)}
                   >
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-medium text-[var(--color-fg-primary)]">
                       {search.name}
                     </p>
                     {search.description && (
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-[var(--color-fg-tertiary)] mt-1">
                         {search.description}
                       </p>
                     )}
                     <div className="flex flex-wrap gap-1 mt-2">
                       {search.query && (
-                        <span className="inline-block px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded">
+                        <span className="inline-block px-2 py-0.5 bg-[var(--color-warning-100)] text-[var(--color-warning-700)] text-xs rounded">
                           {search.query}
                         </span>
                       )}
                       {search.category && (
-                        <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                        <span className="inline-block px-2 py-0.5 bg-[var(--color-brand-100)] text-[var(--color-brand-700)] text-xs rounded">
                           {search.category}
                         </span>
                       )}
                       {search.language && (
-                        <span className="inline-block px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
+                        <span className="inline-block px-2 py-0.5 bg-[var(--color-success-100)] text-[var(--color-success-700)] text-xs rounded">
                           {search.language}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">
+                    <p className="text-xs text-[var(--color-fg-quaternary)] mt-2">
                       Used {search.times_used} times
                       {search.last_used && ` • Last: ${new Date(search.last_used).toLocaleDateString()}`}
                     </p>
@@ -287,13 +287,13 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
                   <div className="flex gap-2">
                     <button
                       onClick={() => startEdit(search)}
-                      className="flex-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-medium transition inline-flex items-center justify-center gap-1"
+                      className="flex-1 px-2 py-1 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-border-secondary)] text-[var(--color-fg-secondary)] rounded text-xs font-medium transition inline-flex items-center justify-center gap-1"
                     >
                       <Edit2 size={14} /> Edit
                     </button>
                     <button
                       onClick={() => deleteSearch(search.id)}
-                      className="flex-1 px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-xs font-medium transition inline-flex items-center justify-center gap-1"
+                      className="flex-1 px-2 py-1 bg-[var(--color-error-50)] hover:bg-[var(--color-error-100)] text-[var(--color-error-600)] rounded text-xs font-medium transition inline-flex items-center justify-center gap-1"
                     >
                       <Trash2 size={14} /> Delete
                     </button>
@@ -301,10 +301,10 @@ export function SavedSearches({ userId, onSelectSearch, isOpen, onClose }: Saved
                 </div>
               ))}
               {!showCreateForm && (
-                <div className="p-3 border-t border-gray-200">
+                <div className="p-3 border-t border-[var(--color-border-secondary)]">
                   <button
                     onClick={() => setShowCreateForm(true)}
-                    className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition inline-flex items-center justify-center gap-1"
+                    className="w-full px-3 py-2 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-white rounded text-sm font-medium transition inline-flex items-center justify-center gap-1"
                   >
                     <Plus size={16} /> Save Current Search
                   </button>

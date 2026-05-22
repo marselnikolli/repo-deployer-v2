@@ -26,14 +26,14 @@ export function NotificationSettingsPage() {
     import_alerts: true,
     error_alerts: true
   })
-  
+
   const [webhooks, setWebhooks] = useState({
     slack_webhook: '',
     discord_webhook: '',
     telegram_token: '',
     telegram_chat_id: ''
   })
-  
+
   const [loading, setLoading] = useState(false)
   // const [showWebhookConfig, setShowWebhookConfig] = useState({ // Not used
   //   slack: false,
@@ -123,20 +123,20 @@ export function NotificationSettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-[var(--color-bg-secondary)] p-8">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-            <Settings size={32} className="text-blue-600" />
+          <h1 className="text-3xl font-bold text-[var(--color-fg-primary)] flex items-center gap-2">
+            <Settings size={32} className="text-[var(--color-brand-600)]" />
             Notification Settings
           </h1>
-          <p className="text-gray-600 mt-2">Configure how you receive notifications</p>
+          <p className="text-[var(--color-fg-tertiary)] mt-2">Configure how you receive notifications</p>
         </div>
 
         {/* Main Settings Card */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Notification Channels</h2>
+        <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-lg)] shadow-sm border border-[var(--color-border-secondary)] p-6 mb-6">
+          <h2 className="text-lg font-semibold text-[var(--color-fg-primary)] mb-4">Notification Channels</h2>
 
           {/* Channel Toggles */}
           <div className="space-y-4 mb-8">
@@ -146,17 +146,17 @@ export function NotificationSettingsPage() {
               { key: 'discord_notifications' as const, label: 'Discord Notifications', desc: 'Send notifications to Discord' },
               { key: 'telegram_notifications' as const, label: 'Telegram Notifications', desc: 'Send notifications to Telegram' }
             ].map(channel => (
-              <div key={channel.key} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div key={channel.key} className="flex items-center justify-between p-4 bg-[var(--color-bg-secondary)] rounded-[var(--radius-lg)] border border-[var(--color-border-secondary)]">
                 <div>
-                  <p className="font-medium text-gray-900">{channel.label}</p>
-                  <p className="text-sm text-gray-600">{channel.desc}</p>
+                  <p className="font-medium text-[var(--color-fg-primary)]">{channel.label}</p>
+                  <p className="text-sm text-[var(--color-fg-tertiary)]">{channel.desc}</p>
                 </div>
                 <button
                   onClick={() => toggleSetting(channel.key)}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                  className={`px-4 py-2 rounded-[var(--radius-lg)] font-medium transition ${
                     settings[channel.key]
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-200 text-gray-700'
+                      ? 'bg-[var(--color-success-100)] text-[var(--color-success-700)]'
+                      : 'bg-[var(--color-bg-tertiary)] text-[var(--color-fg-secondary)]'
                   }`}
                 >
                   {settings[channel.key] ? 'Enabled' : 'Disabled'}
@@ -167,7 +167,7 @@ export function NotificationSettingsPage() {
 
           <hr className="my-6" />
 
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Alert Types</h2>
+          <h2 className="text-lg font-semibold text-[var(--color-fg-primary)] mb-4">Alert Types</h2>
 
           {/* Alert Type Toggles */}
           <div className="space-y-4">
@@ -178,17 +178,17 @@ export function NotificationSettingsPage() {
               { key: 'import_alerts' as const, label: 'Import Alerts', desc: 'Repository import progress' },
               { key: 'error_alerts' as const, label: 'Error Alerts', desc: 'Critical errors and failures' }
             ].map(alert => (
-              <div key={alert.key} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div key={alert.key} className="flex items-center justify-between p-4 bg-[var(--color-bg-secondary)] rounded-[var(--radius-lg)] border border-[var(--color-border-secondary)]">
                 <div>
-                  <p className="font-medium text-gray-900">{alert.label}</p>
-                  <p className="text-sm text-gray-600">{alert.desc}</p>
+                  <p className="font-medium text-[var(--color-fg-primary)]">{alert.label}</p>
+                  <p className="text-sm text-[var(--color-fg-tertiary)]">{alert.desc}</p>
                 </div>
                 <button
                   onClick={() => toggleSetting(alert.key)}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                  className={`px-4 py-2 rounded-[var(--radius-lg)] font-medium transition ${
                     settings[alert.key]
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-gray-200 text-gray-700'
+                      ? 'bg-[var(--color-brand-100)] text-[var(--color-brand-700)]'
+                      : 'bg-[var(--color-bg-tertiary)] text-[var(--color-fg-secondary)]'
                   }`}
                 >
                   {settings[alert.key] ? 'On' : 'Off'}
@@ -199,17 +199,17 @@ export function NotificationSettingsPage() {
         </div>
 
         {/* Webhook Configuration */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Webhook Configuration</h2>
+        <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-lg)] shadow-sm border border-[var(--color-border-secondary)] p-6 mb-6">
+          <h2 className="text-lg font-semibold text-[var(--color-fg-primary)] mb-4">Webhook Configuration</h2>
 
           {/* Slack Webhook */}
           {settings.slack_notifications && (
-            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="mb-6 p-4 bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] rounded-[var(--radius-lg)]">
               <div className="flex items-center justify-between mb-3">
-                <label className="font-medium text-gray-900">Slack Webhook URL</label>
+                <label className="font-medium text-[var(--color-fg-primary)]">Slack Webhook URL</label>
                 <button
                   onClick={() => testNotification('slack')}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition"
+                  className="px-3 py-1 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-white text-sm rounded transition"
                 >
                   Test
                 </button>
@@ -219,19 +219,19 @@ export function NotificationSettingsPage() {
                 placeholder="https://hooks.slack.com/services/..."
                 value={webhooks.slack_webhook}
                 onChange={e => updateWebhook('slack_webhook', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
               />
-              <p className="text-xs text-gray-600 mt-2">
-                Get your webhook URL from <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Slack Apps</a>
+              <p className="text-xs text-[var(--color-fg-tertiary)] mt-2">
+                Get your webhook URL from <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" className="text-[var(--color-brand-600)] hover:underline">Slack Apps</a>
               </p>
             </div>
           )}
 
           {/* Discord Webhook */}
           {settings.discord_notifications && (
-            <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+            <div className="mb-6 p-4 bg-[var(--color-indigo-50)] border border-indigo-200 rounded-[var(--radius-lg)]">
               <div className="flex items-center justify-between mb-3">
-                <label className="font-medium text-gray-900">Discord Webhook URL</label>
+                <label className="font-medium text-[var(--color-fg-primary)]">Discord Webhook URL</label>
                 <button
                   onClick={() => testNotification('discord')}
                   className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded transition"
@@ -244,9 +244,9 @@ export function NotificationSettingsPage() {
                 placeholder="https://discord.com/api/webhooks/..."
                 value={webhooks.discord_webhook}
                 onChange={e => updateWebhook('discord_webhook', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
               />
-              <p className="text-xs text-gray-600 mt-2">
+              <p className="text-xs text-[var(--color-fg-tertiary)] mt-2">
                 Create a webhook in your Discord server settings
               </p>
             </div>
@@ -254,9 +254,9 @@ export function NotificationSettingsPage() {
 
           {/* Telegram Configuration */}
           {settings.telegram_notifications && (
-            <div className="p-4 bg-cyan-50 border border-cyan-200 rounded-lg">
+            <div className="p-4 bg-cyan-50 border border-cyan-200 rounded-[var(--radius-lg)]">
               <div className="flex items-center justify-between mb-3">
-                <label className="font-medium text-gray-900">Telegram Configuration</label>
+                <label className="font-medium text-[var(--color-fg-primary)]">Telegram Configuration</label>
                 <button
                   onClick={() => testNotification('telegram')}
                   className="px-3 py-1 bg-cyan-600 hover:bg-cyan-700 text-white text-sm rounded transition"
@@ -270,17 +270,17 @@ export function NotificationSettingsPage() {
                   placeholder="Bot Token"
                   value={webhooks.telegram_token}
                   onChange={e => updateWebhook('telegram_token', e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                  className="px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 />
                 <input
                   type="password"
                   placeholder="Chat ID"
                   value={webhooks.telegram_chat_id}
                   onChange={e => updateWebhook('telegram_chat_id', e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                  className="px-3 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-lg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-500)] focus:border-transparent text-sm"
                 />
               </div>
-              <p className="text-xs text-gray-600 mt-2">
+              <p className="text-xs text-[var(--color-fg-tertiary)] mt-2">
                 Get bot token from <a href="https://t.me/botfather" target="_blank" rel="noopener noreferrer" className="text-cyan-600 hover:underline">@BotFather</a> and chat ID from your bot
               </p>
             </div>
@@ -292,23 +292,23 @@ export function NotificationSettingsPage() {
           <button
             onClick={saveSettings}
             disabled={loading}
-            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition flex items-center justify-center gap-2"
+            className="flex-1 px-6 py-3 bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] disabled:bg-[var(--color-brand-600)] disabled:opacity-50 text-white font-semibold rounded-[var(--radius-lg)] transition flex items-center justify-center gap-2"
           >
             <Save size={20} />
             {loading ? 'Saving...' : 'Save Settings'}
           </button>
           <button
             onClick={loadSettings}
-            className="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-900 font-semibold rounded-lg transition"
+            className="px-6 py-3 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-border-secondary)] text-[var(--color-fg-primary)] font-semibold rounded-[var(--radius-lg)] transition"
           >
             Reset
           </button>
         </div>
 
         {/* Info Box */}
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex gap-3">
-          <AlertCircle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-blue-900">
+        <div className="mt-6 p-4 bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] rounded-[var(--radius-lg)] flex gap-3">
+          <AlertCircle size={20} className="text-[var(--color-brand-600)] flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-[var(--color-brand-900)]">
             <p className="font-medium">Notification Preferences</p>
             <p className="mt-1">Configure which notification channels are active and what types of alerts you want to receive. Test webhooks before saving.</p>
           </div>

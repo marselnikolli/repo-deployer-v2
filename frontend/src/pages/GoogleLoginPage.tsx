@@ -91,7 +91,7 @@ export default function GoogleLoginPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-[var(--color-bg-secondary)] to-[var(--color-bg-tertiary)]">
         <div className="text-center">
           <Loader className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
           <p className="text-[var(--color-fg-tertiary)]">Connecting with Google...</p>
@@ -102,10 +102,10 @@ export default function GoogleLoginPage() {
 
   if (success) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-[var(--color-bg-secondary)] to-[var(--color-bg-tertiary)]">
         <div className="text-center">
           <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome!</h2>
+          <h2 className="text-2xl font-bold text-[var(--color-fg-primary)] mb-2">Welcome!</h2>
           <p className="text-[var(--color-fg-tertiary)]">You're logged in. Redirecting...</p>
         </div>
       </div>
@@ -113,9 +113,9 @@ export default function GoogleLoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Authentication Error</h1>
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-[var(--color-bg-secondary)] to-[var(--color-bg-tertiary)]">
+      <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-lg p-8 max-w-md w-full mx-4">
+        <h1 className="text-2xl font-bold text-[var(--color-fg-primary)] mb-6">Authentication Error</h1>
         
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3 mb-6">

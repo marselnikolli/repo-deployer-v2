@@ -16,11 +16,11 @@ export default function PasswordResetPage() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--color-brand-600)] to-[var(--color-brand-800)] flex items-center justify-center p-4">
+        <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-xl p-8 max-w-md w-full">
           <AlertCircle className="w-12 h-12 text-red-600 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-4 text-center">Invalid Link</h1>
-          <p className="text-gray-600 mb-6">The password reset link is invalid or has expired.</p>
+          <h1 className="text-2xl font-bold text-[var(--color-fg-primary)] mb-4 text-center">Invalid Link</h1>
+          <p className="text-[var(--color-fg-tertiary)] mb-6">The password reset link is invalid or has expired.</p>
           <button
             onClick={() => navigate('/login')}
             className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition"
@@ -93,33 +93,33 @@ export default function PasswordResetPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full text-center">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--color-brand-600)] to-[var(--color-brand-800)] flex items-center justify-center p-4">
+        <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-xl p-8 max-w-md w-full text-center">
           <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Password Reset Successful!</h2>
-          <p className="text-gray-600 mb-6">Your password has been reset. You will be redirected shortly...</p>
+          <h2 className="text-2xl font-bold text-[var(--color-fg-primary)] mb-2">Password Reset Successful!</h2>
+          <p className="text-[var(--color-fg-tertiary)] mb-6">Your password has been reset. You will be redirected shortly...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
+    <div className="min-h-screen bg-gradient-to-br from-[var(--color-brand-600)] to-[var(--color-brand-800)] flex items-center justify-center p-4">
+      <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-xl p-8 max-w-md w-full">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-block bg-blue-100 p-3 rounded-full mb-4">
-            <Lock className="w-8 h-8 text-blue-600" />
+          <div className="inline-block bg-[var(--color-brand-50)] p-3 rounded-full mb-4">
+            <Lock className="w-8 h-8 text-[var(--color-brand-600)]" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Reset Password</h1>
-          <p className="text-gray-600 mt-2">Enter your new password below</p>
+          <h1 className="text-3xl font-bold text-[var(--color-fg-primary)]">Reset Password</h1>
+          <p className="text-[var(--color-fg-tertiary)] mt-2">Enter your new password below</p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* New Password */}
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="password" className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-1">
               New Password
             </label>
             <input
@@ -129,13 +129,13 @@ export default function PasswordResetPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 8 characters"
               disabled={loading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 text-gray-900"
+              className="w-full px-4 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] placeholder:text-[var(--color-fg-placeholder)] focus:outline-none focus:border-[var(--color-brand-500)] disabled:bg-[var(--color-bg-disabled)]"
             />
           </div>
 
           {/* Confirm Password */}
           <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="confirmPassword" className="block text-sm font-medium text-[var(--color-fg-secondary)] mb-1">
               Confirm Password
             </label>
             <input
@@ -145,23 +145,23 @@ export default function PasswordResetPage() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Repeat password"
               disabled={loading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 text-gray-900"
+              className="w-full px-4 py-2 border border-[var(--color-border-primary)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] text-[var(--color-fg-primary)] placeholder:text-[var(--color-fg-placeholder)] focus:outline-none focus:border-[var(--color-brand-500)] disabled:bg-[var(--color-bg-disabled)]"
             />
           </div>
 
           {/* Validation Error */}
           {validationError && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-yellow-800">{validationError}</p>
+            <div className="bg-[var(--color-warning-50)] border border-[var(--color-warning-200)] rounded-[var(--radius-md)] p-3 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-[var(--color-warning-600)] flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-[var(--color-warning-700)]">{validationError}</p>
             </div>
           )}
 
           {/* Error Message */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-800">{error}</p>
+            <div className="bg-[var(--color-error-50)] border border-[var(--color-error-200)] rounded-[var(--radius-md)] p-3 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-[var(--color-error-600)] flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-[var(--color-error-700)]">{error}</p>
             </div>
           )}
 
@@ -169,18 +169,18 @@ export default function PasswordResetPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 transition mt-6"
+            className="w-full bg-[var(--color-brand-600)] text-white py-2 rounded-[var(--radius-md)] font-medium hover:bg-[var(--color-brand-700)] disabled:opacity-50 transition mt-6"
           >
             {loading ? 'Resetting...' : 'Reset Password'}
           </button>
         </form>
 
         {/* Back to Login */}
-        <div className="mt-6 text-center text-sm text-gray-600">
+        <div className="mt-6 text-center text-sm text-[var(--color-fg-tertiary)]">
           Remember your password?{' '}
           <button
             onClick={() => navigate('/login')}
-            className="text-blue-600 hover:text-blue-700 font-medium transition"
+            className="text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] font-medium transition"
           >
             Back to login
           </button>

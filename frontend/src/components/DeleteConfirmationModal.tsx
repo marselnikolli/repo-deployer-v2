@@ -39,15 +39,15 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-lg p-6 max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <h2 className="text-lg font-semibold text-[var(--color-fg-primary)]">{title}</h2>
           <button
             onClick={onCancel}
             disabled={isLoading}
-            className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+            className="text-[var(--color-fg-disabled)] hover:text-[var(--color-fg-tertiary)] disabled:opacity-50"
             aria-label="Close"
           >
             <X size={20} />
@@ -56,9 +56,9 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
 
         {/* Message */}
         <div className="mb-6">
-          <p className="text-gray-700">{message}</p>
+          <p className="text-[var(--color-fg-secondary)]">{message}</p>
           {itemCount && itemCount > 0 && (
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="text-sm text-[var(--color-fg-quaternary)] mt-2">
               {itemCount} item{itemCount !== 1 ? 's' : ''} will be permanently deleted.
             </p>
           )}
@@ -69,14 +69,14 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
           <button
             onClick={onCancel}
             disabled={isLoading}
-            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 text-[var(--color-fg-secondary)] bg-[var(--color-bg-tertiary)] rounded-[var(--radius-md)] hover:bg-[var(--color-border-secondary)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={isLoading}
-            className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            className="px-4 py-2 text-white bg-[var(--color-error-600)] rounded-[var(--radius-md)] hover:bg-[var(--color-error-700)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
             {isLoading && (
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -86,8 +86,8 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
         </div>
 
         {/* Keyboard hints */}
-        <div className="mt-4 text-xs text-gray-500 text-center">
-          <p>Press <kbd className="bg-gray-100 px-2 py-1 rounded">Esc</kbd> to cancel or <kbd className="bg-gray-100 px-2 py-1 rounded">Enter</kbd> to confirm</p>
+        <div className="mt-4 text-xs text-[var(--color-fg-quaternary)] text-center">
+          <p>Press <kbd className="bg-[var(--color-bg-tertiary)] px-2 py-1 rounded-[var(--radius-xs)]">Esc</kbd> to cancel or <kbd className="bg-[var(--color-bg-tertiary)] px-2 py-1 rounded-[var(--radius-xs)]">Enter</kbd> to confirm</p>
         </div>
       </div>
     </div>

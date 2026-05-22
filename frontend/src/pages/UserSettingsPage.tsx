@@ -142,7 +142,7 @@ export function UserSettingsPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-secondary)] py-8">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-[var(--color-bg-primary)] rounded-lg border border-[var(--color-border-secondary)] shadow-lg overflow-hidden">
           {/* Header */}
           <div className="bg-gradient-to-r from-[var(--color-brand-600)] to-[var(--color-brand-700)] px-8 py-6 text-white">
@@ -255,7 +255,7 @@ export function UserSettingsPage() {
                       <div className="text-sm text-blue-800 dark:text-blue-200">
                         <p className="font-semibold mb-1">What happens when you connect?</p>
                         <ul className="list-disc list-inside space-y-1">
-                          <li>A private <code className="bg-white dark:bg-black px-1 rounded text-xs">git-bookmark</code> repository will be created</li>
+                          <li>A private <code className="bg-[var(--color-bg-tertiary)] px-1 rounded text-xs">git-bookmark</code> repository will be created</li>
                           <li>Your current bookmarks will be merged with GitHub data</li>
                           <li>Automatic syncing will occur daily at 2:00 AM UTC</li>
                           <li>You can manually trigger syncs anytime</li>

@@ -26,7 +26,7 @@ export function HomePage() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-secondary)]">
       <header className="bg-[var(--color-bg-primary)] shadow-[var(--shadow-sm)] border-b border-[var(--color-border-secondary)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-[length:var(--text-display-xs)] font-semibold text-[var(--color-fg-primary)]">
@@ -77,7 +77,7 @@ export function HomePage() {
 
       <Tabs selectedKey={selectedTab} onSelectionChange={(key) => setSelectedTab(key as string)}>
         <nav className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border-secondary)]">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
             <TabList className="flex gap-8" aria-label="Main navigation">
               <Tab
                 id="dashboard"
@@ -153,7 +153,7 @@ export function HomePage() {
           </div>
         </nav>
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <TabPanel id="dashboard">
             <Dashboard />
           </TabPanel>

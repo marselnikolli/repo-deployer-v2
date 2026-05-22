@@ -67,7 +67,7 @@ export default function DockerSetupPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[var(--color-bg-primary)] to-[var(--color-bg-secondary)] p-4 py-12">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="bg-[var(--color-bg-primary)] rounded-lg shadow-md p-8 mb-6">
           <h1 className="text-3xl font-bold text-[var(--color-fg-primary)] mb-2">Docker Setup</h1>
