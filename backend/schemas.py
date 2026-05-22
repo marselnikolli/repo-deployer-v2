@@ -13,6 +13,21 @@ class UserRegister(BaseModel):
     name: Optional[str] = None
 
 
+class UserUpdateRequest(BaseModel):
+    name: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class APIKeyListItem(BaseModel):
+    name: str
+    created_at: Optional[str] = None
+    preview: str
+
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str

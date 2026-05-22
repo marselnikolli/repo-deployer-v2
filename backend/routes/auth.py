@@ -7,12 +7,13 @@ from typing import Optional
 from schemas import (
     UserRegister, UserLogin, UserSchema, TokenResponse, APIKeyCreate, APIKeyResponse,
     PasswordResetRequest, PasswordResetConfirm, PasswordResetResponse,
-    EmailVerification, EmailVerificationResponse
+    EmailVerification, EmailVerificationResponse,
+    UserUpdateRequest, ChangePasswordRequest, APIKeyListItem
 )
 from database import SessionLocal
 from crud.user import (
-    create_user, get_user_by_email, get_user_by_id, get_user_by_github_id, 
-    get_user_by_google_id, update_last_login, add_api_key, revoke_api_key, list_users
+    create_user, get_user_by_email, get_user_by_id, get_user_by_github_id,
+    get_user_by_google_id, update_last_login, update_user, add_api_key, revoke_api_key, list_users
 )
 from services.auth import (
     hash_password, verify_password, create_access_token, decode_access_token
@@ -476,6 +477,58 @@ def get_current_user_profile(
     """Get current user profile"""
     user = get_current_user(authorization, db)
     return UserSchema.from_orm(user)
+
+
+@router.patch("/me", response_model=UserSchema)
+def update_profile(
+    update: UserUpdateRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Update current user profile (name)"""
+    user = get_current_user(authorization, db)
+    updated = update_user(db, user.id, **{k: v for k, v in update.dict().items() if v is not None})
+    return UserSchema.from_orm(updated)
+
+
+@router.post("/change-password")
+def change_password(
+    request: ChangePasswordRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Change password (local accounts only)"""
+    user = get_current_user(authorization, db)
+    if user.auth_provider != "local":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password change is only available for local accounts"
+        )
+    if not user.password_hash or not verify_password(request.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+    update_user(db, user.id, password_hash=hash_password(request.new_password))
+    return {"message": "Password updated successfully"}
+
+
+@router.get("/api-keys", response_model=list[APIKeyListItem])
+def list_api_keys(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """List current user's API keys (masked)"""
+    user = get_current_user(authorization, db)
+    keys = user.api_keys or []
+    return [
+        APIKeyListItem(
+            name=k.get("name", "API Key"),
+            created_at=k.get("created_at"),
+            preview="••••" + k["key"][-8:]
+        )
+        for k in keys
+    ]
 
 
 @router.post("/api-keys", response_model=APIKeyResponse)

@@ -21,6 +21,8 @@ import {
   Star,
   GitFork,
   RefreshCw,
+  LayoutList,
+  LayoutGrid,
 } from 'lucide-react'
 import { useRepositoryStore } from '@/store/useRepositoryStore'
 import { repositoryApi, bulkApi, generalApi, searchApi, exportApi, cloneQueueApi } from '@/api/client'
@@ -138,6 +140,9 @@ export function RepositoryList() {
   const [readmeRepo, setReadmeRepo] = useState<Repository | null>(null)
   const [focusedIndex, setFocusedIndex] = useState<number>(-1)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>(
+    () => (localStorage.getItem('repo-view-mode') as 'table' | 'grid') ?? 'table'
+  )
   const [isCloning, setIsCloning] = useState(false)
   const [isHealthChecking, setIsHealthChecking] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
@@ -661,6 +666,32 @@ export function RepositoryList() {
             <Keyboard className="size-4" />
             Shortcuts
           </button>
+          <div className="flex items-center border border-[var(--color-border-primary)] rounded-[var(--radius-md)] overflow-hidden">
+            <button
+              onClick={() => { setViewMode('table'); localStorage.setItem('repo-view-mode', 'table') }}
+              className={cx(
+                'p-1.5 transition-colors',
+                viewMode === 'table'
+                  ? 'bg-[var(--color-brand-50)] text-[var(--color-brand-600)]'
+                  : 'text-[var(--color-fg-tertiary)] hover:text-[var(--color-fg-secondary)] hover:bg-[var(--color-bg-secondary)]'
+              )}
+              title="Table view"
+            >
+              <LayoutList className="size-4" />
+            </button>
+            <button
+              onClick={() => { setViewMode('grid'); localStorage.setItem('repo-view-mode', 'grid') }}
+              className={cx(
+                'p-1.5 transition-colors',
+                viewMode === 'grid'
+                  ? 'bg-[var(--color-brand-50)] text-[var(--color-brand-600)]'
+                  : 'text-[var(--color-fg-tertiary)] hover:text-[var(--color-fg-secondary)] hover:bg-[var(--color-bg-secondary)]'
+              )}
+              title="Grid view"
+            >
+              <LayoutGrid className="size-4" />
+            </button>
+          </div>
           <span className="text-[length:var(--text-sm)] text-[var(--color-fg-tertiary)]">
             {totalCount} total
           </span>
@@ -955,248 +986,439 @@ export function RepositoryList() {
         </div>
       ) : (
         <>
-          {/* Table */}
-          <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-[var(--shadow-sm)] border border-[var(--color-border-secondary)] overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)]">
-                  <th className="w-12 px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.size === repositories.length && repositories.length > 0}
-                      onChange={handleSelectAll}
-                      className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none min-w-[200px] max-w-[320px]"
-                    onClick={() => handleSort('name')}
-                  >
-                    <span className="flex items-center gap-1">
-                      Repository
-                      {getSortIcon('name')}
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[180px]">
-                    State
-                  </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none min-w-[100px]"
-                    onClick={() => handleSort('category')}
-                  >
-                    <span className="flex items-center gap-1">
-                      Category
-                      {getSortIcon('category')}
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[150px]">
-                    Metadata
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-border-secondary)]">
-                {repositories?.filter(repo => repo != null).map((repo: Repository, index: number) => (
-                  <tr
-                    key={repo.id}
-                    className={cx(
-                      'hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer',
-                      selectedIds.has(repo?.id) && 'bg-[var(--color-brand-25)]',
-                      focusedIndex === index && 'ring-2 ring-inset ring-[var(--color-brand-400)]'
-                    )}
-                    onClick={() => setFocusedIndex(index)}
-                    onDoubleClick={() => setSelectedRepo(repo)}
-                  >
-                    <td className="px-4 py-3">
+          {viewMode === 'table' ? (
+            /* Table */
+            <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] shadow-[var(--shadow-sm)] border border-[var(--color-border-secondary)] overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)]">
+                    <th className="w-12 px-4 py-3">
                       <input
                         type="checkbox"
-                        checked={repo?.id ? selectedIds.has(repo.id) : false}
-                        onChange={(e) => {
-                          e.stopPropagation()
-                          repo?.id && toggleSelection(repo.id)
-                        }}
-                        onClick={(e) => e.stopPropagation()}
+                        checked={selectedIds.size === repositories.length && repositories.length > 0}
+                        onChange={handleSelectAll}
                         className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
                       />
-                    </td>
-                    <td className="px-4 py-3 min-w-[200px] max-w-[320px]">
-                      <div className="flex items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <button
-                            className="text-[length:var(--text-sm)] font-medium text-[var(--color-brand-600)] hover:underline text-left"
-                            onClick={(e) => { e.stopPropagation(); setReadmeRepo(repo) }}
-                            title="View README"
-                          >
-                            {repo?.name || 'Unknown'}
-                          </button>
-                          {repo?.title && (
-                            <p className="text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] truncate">
-                              {repo.title}
-                            </p>
-                          )}
-                          <a
-                            href={repo?.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] truncate mt-1"
-                            title={repo?.url || 'No URL'}
-                          >
-                            <ExternalLink className="size-3 flex-shrink-0" />
-                            <span className="truncate">{cleanUrl(repo?.url) || 'No URL'}</span>
-                          </a>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedRepo(repo)
-                          }}
-                          className="px-2 py-1 rounded-[var(--radius-md)] text-[length:var(--text-xs)] font-medium text-[var(--color-brand-600)] bg-[var(--color-brand-50)] hover:bg-[var(--color-brand-100)] border border-[var(--color-brand-200)] transition-colors flex items-center gap-1 flex-shrink-0"
-                          title="View details"
-                        >
-                          <Eye className="size-3" />
-                          View
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 min-w-[180px]">
-                      <div className="flex flex-col gap-1.5">
-                        {/* Cloning state */}
-                        <div className="flex items-center gap-2">
-                          {repo?.cloned ? (
-                            <>
-                              <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
-                                <CheckCircle className="size-3" />
-                                Cloned
-                              </span>
-                              <button
-                                onClick={(e) => handleDeleteClone(e, repo.id, repo.name)}
-                                className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-red-50 text-red-600 hover:bg-red-100 rounded-[var(--radius-md)] transition-colors"
-                                title="Delete local clone"
-                              >
-                                <Trash2 className="size-3" />
-                                Delete clone
-                              </button>
-                            </>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-gray-100 text-gray-600 rounded-[var(--radius-md)]">
-                              Not cloned
-                            </span>
-                          )}
-                        </div>
-                        {/* Health status badge */}
-                        {repo?.health_status && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit ${
-                            repo.health_status === 'healthy' ? 'bg-[var(--color-success-50)] text-[var(--color-success-700)]' :
-                            repo.health_status === 'archived' ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-fg-tertiary)]' :
-                            repo.health_status === 'not_found' ? 'bg-red-100 text-red-700' :
-                            'bg-blue-100 text-blue-700'
-                          }`}>
-                            <Heart className="size-3" />
-                            {repo.health_status}
-                          </span>
-                        )}
-                        {/* Deployed status */}
-                        {repo?.deployed && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded-[var(--radius-md)] w-fit">
-                            <Server className="size-3" />
-                            Deployed
-                          </span>
-                        )}
-                        {/* ZIP archive — download if ready, enqueue if not */}
-                        {repo?.zip_status === 'done' ? (
-                          <button
-                            onClick={(e) => handleDownloadZip(e, repo.id, repo.name)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
-                            title="Download ZIP archive"
-                          >
-                            <Download className="size-3" />
-                            Download ZIP
-                          </button>
-                        ) : repo?.zip_status === 'in_progress' || repo?.zip_status === 'pending' ? (
-                          <div className="flex flex-col gap-1 w-full max-w-[160px]">
-                            <span className="inline-flex items-center gap-1 text-[length:var(--text-xs)] font-medium text-yellow-700">
-                              <Loader2 className="size-3 animate-spin" />
-                              {zipProgress[repo.id]
-                                ? `Zipping… ${zipProgress[repo.id].pct}%`
-                                : 'Zipping…'}
-                            </span>
-                            <div className="w-full h-1.5 bg-[var(--color-warning-100)] rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-[var(--color-warning-400)] rounded-full transition-all duration-300"
-                                style={{ width: `${zipProgress[repo.id]?.pct ?? 0}%` }}
-                              />
-                            </div>
-                            {zipProgress[repo.id]?.total > 0 && (
-                              <span className="text-[10px] text-[var(--color-fg-quaternary)]">
-                                {(zipProgress[repo.id].downloaded / 1024 / 1024).toFixed(1)} /
-                                {(zipProgress[repo.id].total / 1024 / 1024).toFixed(1)} MB
-                              </span>
-                            )}
-                          </div>
-                        ) : repo?.zip_status === 'failed' ? (
-                          <button
-                            onClick={(e) => handleEnqueueZip(e, repo.id)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
-                            title="ZIP failed — click to retry"
-                          >
-                            <Download className="size-3" />
-                            ZIP failed — retry
-                          </button>
-                        ) : (
-                          <button
-                            onClick={(e) => handleEnqueueZip(e, repo.id)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-                            title="Create ZIP archive"
-                          >
-                            <Download className="size-3" />
-                            Get ZIP
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 min-w-[100px]">
-                      <CategoryBadge category={repo?.category || 'uncategorized'} />
-                    </td>
-                    <td className="px-4 py-3 min-w-[150px]">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
-                          {(repo?.stars ?? 0) > 0 && (
-                            <span className="inline-flex items-center gap-1">
-                              <Star className="size-3 text-[var(--color-warning-400)]" />
-                              {repo.stars!.toLocaleString()}
-                            </span>
-                          )}
-                          {(repo?.forks ?? 0) > 0 && (
-                            <span className="inline-flex items-center gap-1">
-                              <GitFork className="size-3 text-[var(--color-fg-tertiary)]" />
-                              {repo.forks!.toLocaleString()}
-                            </span>
-                          )}
-                          {repo?.language && (
-                            <span className="px-2 py-0.5 bg-[var(--color-bg-secondary)] rounded-[var(--radius-sm)] font-medium">
-                              {repo.language}
-                            </span>
-                          )}
-                          {!repo?.language && !repo?.stars && !repo?.forks && (
-                            <span className="text-[var(--color-fg-quaternary)]">—</span>
-                          )}
-                        </div>
-                        {(repo?.topics?.length ?? 0) > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {repo.topics!.slice(0, 3).map(t => (
-                              <span key={t} className="px-1.5 py-0.5 text-[10px] bg-[var(--color-brand-50)] text-[var(--color-brand-600)] rounded-[var(--radius-sm)]">
-                                {t}
-                              </span>
-                            ))}
-                            {repo.topics!.length > 3 && (
-                              <span className="text-[10px] text-[var(--color-fg-quaternary)]">+{repo.topics!.length - 3}</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </td>
+                    </th>
+                    <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none min-w-[200px] max-w-[320px]"
+                      onClick={() => handleSort('name')}
+                    >
+                      <span className="flex items-center gap-1">
+                        Repository
+                        {getSortIcon('name')}
+                      </span>
+                    </th>
+                    <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[180px]">
+                      State
+                    </th>
+                    <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider cursor-pointer hover:text-[var(--color-fg-primary)] select-none min-w-[100px]"
+                      onClick={() => handleSort('category')}
+                    >
+                      <span className="flex items-center gap-1">
+                        Category
+                        {getSortIcon('category')}
+                      </span>
+                    </th>
+                    <th className="px-4 py-3 text-left text-[length:var(--text-xs)] font-semibold text-[var(--color-fg-tertiary)] uppercase tracking-wider min-w-[150px]">
+                      Metadata
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border-secondary)]">
+                  {repositories?.filter(repo => repo != null).map((repo: Repository, index: number) => (
+                    <tr
+                      key={repo.id}
+                      className={cx(
+                        'hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer',
+                        selectedIds.has(repo?.id) && 'bg-[var(--color-brand-25)]',
+                        focusedIndex === index && 'ring-2 ring-inset ring-[var(--color-brand-400)]'
+                      )}
+                      onClick={() => setFocusedIndex(index)}
+                      onDoubleClick={() => setSelectedRepo(repo)}
+                    >
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={repo?.id ? selectedIds.has(repo.id) : false}
+                          onChange={(e) => {
+                            e.stopPropagation()
+                            repo?.id && toggleSelection(repo.id)
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
+                        />
+                      </td>
+                      <td className="px-4 py-3 min-w-[200px] max-w-[320px]">
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <button
+                              className="text-[length:var(--text-sm)] font-medium text-[var(--color-brand-600)] hover:underline text-left"
+                              onClick={(e) => { e.stopPropagation(); setReadmeRepo(repo) }}
+                              title="View README"
+                            >
+                              {repo?.name || 'Unknown'}
+                            </button>
+                            {repo?.title && (
+                              <p className="text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] truncate">
+                                {repo.title}
+                              </p>
+                            )}
+                            <a
+                              href={repo?.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-brand-600)] hover:text-[var(--color-brand-700)] truncate mt-1"
+                              title={repo?.url || 'No URL'}
+                            >
+                              <ExternalLink className="size-3 flex-shrink-0" />
+                              <span className="truncate">{cleanUrl(repo?.url) || 'No URL'}</span>
+                            </a>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedRepo(repo)
+                            }}
+                            className="px-2 py-1 rounded-[var(--radius-md)] text-[length:var(--text-xs)] font-medium text-[var(--color-brand-600)] bg-[var(--color-brand-50)] hover:bg-[var(--color-brand-100)] border border-[var(--color-brand-200)] transition-colors flex items-center gap-1 flex-shrink-0"
+                            title="View details"
+                          >
+                            <Eye className="size-3" />
+                            View
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 min-w-[180px]">
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            {repo?.cloned ? (
+                              <>
+                                <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)]">
+                                  <CheckCircle className="size-3" />
+                                  Cloned
+                                </span>
+                                <button
+                                  onClick={(e) => handleDeleteClone(e, repo.id, repo.name)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-red-50 text-red-600 hover:bg-red-100 rounded-[var(--radius-md)] transition-colors"
+                                  title="Delete local clone"
+                                >
+                                  <Trash2 className="size-3" />
+                                  Delete clone
+                                </button>
+                              </>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-gray-100 text-gray-600 rounded-[var(--radius-md)]">
+                                Not cloned
+                              </span>
+                            )}
+                          </div>
+                          {repo?.health_status && (
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit ${
+                              repo.health_status === 'healthy' ? 'bg-[var(--color-success-50)] text-[var(--color-success-700)]' :
+                              repo.health_status === 'archived' ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-fg-tertiary)]' :
+                              repo.health_status === 'not_found' ? 'bg-red-100 text-red-700' :
+                              'bg-blue-100 text-blue-700'
+                            }`}>
+                              <Heart className="size-3" />
+                              {repo.health_status}
+                            </span>
+                          )}
+                          {repo?.deployed && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded-[var(--radius-md)] w-fit">
+                              <Server className="size-3" />
+                              Deployed
+                            </span>
+                          )}
+                          {repo?.zip_status === 'done' ? (
+                            <button
+                              onClick={(e) => handleDownloadZip(e, repo.id, repo.name)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                              title="Download ZIP archive"
+                            >
+                              <Download className="size-3" />
+                              Download ZIP
+                            </button>
+                          ) : repo?.zip_status === 'in_progress' || repo?.zip_status === 'pending' ? (
+                            <div className="flex flex-col gap-1 w-full max-w-[160px]">
+                              <span className="inline-flex items-center gap-1 text-[length:var(--text-xs)] font-medium text-yellow-700">
+                                <Loader2 className="size-3 animate-spin" />
+                                {zipProgress[repo.id]
+                                  ? `Zipping… ${zipProgress[repo.id].pct}%`
+                                  : 'Zipping…'}
+                              </span>
+                              <div className="w-full h-1.5 bg-[var(--color-warning-100)] rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-[var(--color-warning-400)] rounded-full transition-all duration-300"
+                                  style={{ width: `${zipProgress[repo.id]?.pct ?? 0}%` }}
+                                />
+                              </div>
+                              {zipProgress[repo.id]?.total > 0 && (
+                                <span className="text-[10px] text-[var(--color-fg-quaternary)]">
+                                  {(zipProgress[repo.id].downloaded / 1024 / 1024).toFixed(1)} /
+                                  {(zipProgress[repo.id].total / 1024 / 1024).toFixed(1)} MB
+                                </span>
+                              )}
+                            </div>
+                          ) : repo?.zip_status === 'failed' ? (
+                            <button
+                              onClick={(e) => handleEnqueueZip(e, repo.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                              title="ZIP failed — click to retry"
+                            >
+                              <Download className="size-3" />
+                              ZIP failed — retry
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => handleEnqueueZip(e, repo.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] w-fit bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                              title="Create ZIP archive"
+                            >
+                              <Download className="size-3" />
+                              Get ZIP
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 min-w-[100px]">
+                        <CategoryBadge category={repo?.category || 'uncategorized'} />
+                      </td>
+                      <td className="px-4 py-3 min-w-[150px]">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
+                            {(repo?.stars ?? 0) > 0 && (
+                              <span className="inline-flex items-center gap-1">
+                                <Star className="size-3 text-[var(--color-warning-400)]" />
+                                {repo.stars!.toLocaleString()}
+                              </span>
+                            )}
+                            {(repo?.forks ?? 0) > 0 && (
+                              <span className="inline-flex items-center gap-1">
+                                <GitFork className="size-3 text-[var(--color-fg-tertiary)]" />
+                                {repo.forks!.toLocaleString()}
+                              </span>
+                            )}
+                            {repo?.language && (
+                              <span className="px-2 py-0.5 bg-[var(--color-bg-secondary)] rounded-[var(--radius-sm)] font-medium">
+                                {repo.language}
+                              </span>
+                            )}
+                            {!repo?.language && !repo?.stars && !repo?.forks && (
+                              <span className="text-[var(--color-fg-quaternary)]">—</span>
+                            )}
+                          </div>
+                          {(repo?.topics?.length ?? 0) > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {repo.topics!.slice(0, 3).map(t => (
+                                <span key={t} className="px-1.5 py-0.5 text-[10px] bg-[var(--color-brand-50)] text-[var(--color-brand-600)] rounded-[var(--radius-sm)]">
+                                  {t}
+                                </span>
+                              ))}
+                              {repo.topics!.length > 3 && (
+                                <span className="text-[10px] text-[var(--color-fg-quaternary)]">+{repo.topics!.length - 3}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* Grid */
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {repositories?.filter(repo => repo != null).map((repo: Repository, index: number) => (
+                <div
+                  key={repo.id}
+                  className={cx(
+                    'bg-[var(--color-bg-primary)] rounded-[var(--radius-xl)] border border-[var(--color-border-secondary)] shadow-[var(--shadow-sm)] flex flex-col cursor-pointer transition-all hover:shadow-[var(--shadow-md)] hover:border-[var(--color-border-primary)]',
+                    selectedIds.has(repo?.id) && 'border-[var(--color-brand-300)] bg-[var(--color-brand-25)]',
+                    focusedIndex === index && 'ring-2 ring-[var(--color-brand-400)]'
+                  )}
+                  onClick={() => setFocusedIndex(index)}
+                  onDoubleClick={() => setSelectedRepo(repo)}
+                >
+                  {/* ── Header: checkbox · name · external link ── */}
+                  <div className="flex items-start gap-2 p-4 pb-0">
+                    <input
+                      type="checkbox"
+                      checked={repo?.id ? selectedIds.has(repo.id) : false}
+                      onChange={(e) => { e.stopPropagation(); repo?.id && toggleSelection(repo.id) }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-1 w-4 h-4 rounded border-[var(--color-border-primary)] text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)] flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <button
+                        className="text-[length:var(--text-sm)] font-semibold text-[var(--color-brand-600)] hover:underline text-left leading-snug line-clamp-2 w-full"
+                        onClick={(e) => { e.stopPropagation(); setReadmeRepo(repo) }}
+                        title="View README"
+                      >
+                        {repo?.name || 'Unknown'}
+                      </button>
+                    </div>
+                    <a
+                      href={repo?.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-0.5 text-[var(--color-fg-quaternary)] hover:text-[var(--color-brand-500)] transition-colors flex-shrink-0"
+                      title="Open in browser"
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </a>
+                  </div>
+
+                  {/* ── Description ── */}
+                  <p className="px-4 pt-2 text-[length:var(--text-xs)] text-[var(--color-fg-tertiary)] line-clamp-2 leading-relaxed min-h-[2.5rem]">
+                    {repo?.description || repo?.title || <span className="italic opacity-50">No description</span>}
+                  </p>
+
+                  {/* ── Stats: language · stars · forks ── */}
+                  <div className="flex items-center gap-3 px-4 pt-3 text-[length:var(--text-xs)] text-[var(--color-fg-secondary)]">
+                    {repo?.language ? (
+                      <span className="inline-flex items-center gap-1 font-medium">
+                        <span className="w-2 h-2 rounded-full bg-[var(--color-brand-400)] flex-shrink-0" />
+                        {repo.language}
+                      </span>
+                    ) : null}
+                    {(repo?.stars ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1">
+                        <Star className="size-3 text-[var(--color-warning-400)]" />
+                        {repo.stars!.toLocaleString()}
+                      </span>
+                    )}
+                    {(repo?.forks ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1">
+                        <GitFork className="size-3 text-[var(--color-fg-tertiary)]" />
+                        {repo.forks!.toLocaleString()}
+                      </span>
+                    )}
+                    {!repo?.language && !(repo?.stars ?? 0) && !(repo?.forks ?? 0) && (
+                      <span className="text-[var(--color-fg-quaternary)]">No metadata</span>
+                    )}
+                  </div>
+
+                  {/* ── Topics ── */}
+                  {(repo?.topics?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-1 px-4 pt-2">
+                      {repo.topics!.slice(0, 4).map(t => (
+                        <span key={t} className="px-1.5 py-0.5 text-[10px] bg-[var(--color-brand-50)] text-[var(--color-brand-600)] rounded-[var(--radius-sm)]">
+                          {t}
+                        </span>
+                      ))}
+                      {repo.topics!.length > 4 && (
+                        <span className="text-[10px] text-[var(--color-fg-quaternary)] self-center">+{repo.topics!.length - 4}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Spacer pushes footer down ── */}
+                  <div className="flex-1" />
+
+                  {/* ── State & actions ── */}
+                  <div className="px-4 pt-3 pb-3 space-y-2">
+                    {/* Clone + health + deployed badges */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {repo?.cloned ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-[var(--color-success-50)] text-[var(--color-success-700)] rounded-[var(--radius-md)] border border-[var(--color-success-200)]">
+                          <CheckCircle className="size-3" />
+                          Cloned
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-[var(--color-bg-tertiary)] text-[var(--color-fg-tertiary)] rounded-[var(--radius-md)] border border-[var(--color-border-secondary)]">
+                          Not cloned
+                        </span>
+                      )}
+                      {repo?.deployed && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-[var(--color-purple-50)] text-[var(--color-purple-700)] rounded-[var(--radius-md)] border border-[var(--color-purple-200)]">
+                          <Server className="size-3" />
+                          Deployed
+                        </span>
+                      )}
+                      {repo?.health_status && (
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-[var(--radius-md)] border ${
+                          repo.health_status === 'healthy' ? 'bg-[var(--color-success-50)] text-[var(--color-success-700)] border-[var(--color-success-200)]' :
+                          repo.health_status === 'archived' ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-fg-tertiary)] border-[var(--color-border-secondary)]' :
+                          repo.health_status === 'not_found' ? 'bg-red-50 text-red-700 border-red-200' :
+                          'bg-blue-50 text-blue-700 border-blue-200'
+                        }`}>
+                          <Heart className="size-3" />
+                          {repo.health_status}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* ZIP row */}
+                    <div className="flex items-center gap-2">
+                      {repo?.zip_status === 'done' ? (
+                        <button
+                          onClick={(e) => handleDownloadZip(e, repo.id, repo.name)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                        >
+                          <Download className="size-3" />
+                          Download ZIP
+                        </button>
+                      ) : repo?.zip_status === 'in_progress' || repo?.zip_status === 'pending' ? (
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center justify-between text-[10px] font-medium text-[var(--color-warning-700)]">
+                            <span className="inline-flex items-center gap-1">
+                              <Loader2 className="size-3 animate-spin" />
+                              {zipProgress[repo.id] ? `Zipping… ${zipProgress[repo.id].pct}%` : 'Zipping…'}
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 bg-[var(--color-warning-100)] rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-[var(--color-warning-400)] rounded-full transition-all duration-300"
+                              style={{ width: `${zipProgress[repo.id]?.pct ?? 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : repo?.zip_status === 'failed' ? (
+                        <button
+                          onClick={(e) => handleEnqueueZip(e, repo.id)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-colors"
+                        >
+                          <Download className="size-3" />
+                          ZIP failed — retry
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => handleEnqueueZip(e, repo.id)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[length:var(--text-xs)] font-medium rounded-[var(--radius-md)] bg-[var(--color-bg-secondary)] text-[var(--color-fg-secondary)] hover:bg-[var(--color-bg-tertiary)] border border-[var(--color-border-primary)] transition-colors"
+                        >
+                          <Download className="size-3" />
+                          Get ZIP
+                        </button>
+                      )}
+                      {repo?.cloned && (
+                        <button
+                          onClick={(e) => handleDeleteClone(e, repo.id, repo.name)}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-red-50 text-red-600 hover:bg-red-100 rounded-[var(--radius-md)] border border-red-200 transition-colors"
+                          title="Delete local clone"
+                        >
+                          <Trash2 className="size-3" />
+                          Del clone
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── Footer: category · view button ── */}
+                  <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-[var(--color-border-secondary)]">
+                    <CategoryBadge category={repo?.category || 'uncategorized'} />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setSelectedRepo(repo) }}
+                      className="px-2.5 py-1 rounded-[var(--radius-md)] text-[length:var(--text-xs)] font-medium text-[var(--color-brand-600)] bg-[var(--color-brand-50)] hover:bg-[var(--color-brand-100)] border border-[var(--color-brand-200)] transition-colors flex items-center gap-1 flex-shrink-0"
+                    >
+                      <Eye className="size-3" />
+                      View
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Pagination */}
           <div className="flex items-center justify-between">
