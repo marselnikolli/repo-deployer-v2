@@ -112,6 +112,7 @@ class BookmarkBackupPayload(BaseModel):
 class BulkImportEntry(BaseModel):
     url: str
     tags: Optional[List[str]] = None
+    metadata: Optional[RepoPageMetadata] = None
 
 class BulkImportUrlsRequest(BaseModel):
     urls: Optional[List[str]] = None
@@ -284,17 +285,18 @@ async def bulk_import_urls(
 
     # Normalise and deduplicate within the incoming batch
     seen: set = set()
-    valid_entries: list = []  # list of (normalised_url, tags)
+    valid_entries: list = []  # list of (normalised_url, tags, metadata)
     for entry in raw_entries:
         norm = normalize_github_url(entry.url)
         if norm and norm not in seen:
             seen.add(norm)
-            valid_entries.append((norm, entry.tags or []))
+            valid_entries.append((norm, entry.tags or [], entry.metadata))
         elif not norm:
             failed += 1
 
-    valid_urls = [url for url, _ in valid_entries]
-    tags_by_url = {url: tags for url, tags in valid_entries}
+    valid_urls = [url for url, _,_ in valid_entries]
+    tags_by_url = {url: tags for url, tags,_ in valid_entries}
+    metadata_by_url = {url: meta for url, _, meta in valid_entries if meta}
 
     if not valid_urls:
         total = len(payload.urls or []) + len(payload.entries or [])
@@ -314,11 +316,19 @@ async def bulk_import_urls(
         repo_name = url_parts[-1]
         owner = url_parts[-2] if len(url_parts) >= 2 else "unknown"
         full_name = f"{owner}/{repo_name}"
+        meta = metadata_by_url.get(url)
         repos_to_add.append(Repository(
             name=full_name,
             url=url,
             title=full_name,
             category="other",
+            description=meta.description if meta and meta.description else None,
+            stars=meta.stars if meta and meta.stars else 0,
+            forks=meta.forks if meta and meta.forks else 0,
+            language=meta.language if meta and meta.language else None,
+            topics=meta.topics if meta and meta.topics else None,
+            license=meta.license if meta and meta.license else None,
+            is_fork=meta.is_fork if meta and meta.is_fork else False,
         ))
 
     if repos_to_add:

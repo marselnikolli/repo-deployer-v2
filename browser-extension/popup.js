@@ -73,6 +73,30 @@ function normaliseGitHubUrl(url) {
   }
 }
 
+async function fetchGitHubMetadata(url) {
+  try {
+    const parts = url.replace('https://github.com/', '').split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    const [owner, repo] = parts;
+    const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'RepoDeployer/2.0' }
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return {
+      description: data.description || null,
+      stars: data.stargazers_count || null,
+      forks: data.forks_count || null,
+      language: data.language || null,
+      topics: data.topics || [],
+      license: (data.license && data.spdx_id) || null,
+      is_fork: data.fork || false,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function getAppUrl() {
   return new Promise(resolve => {
     chrome.storage.sync.get(['appUrl'], result => {
@@ -179,7 +203,12 @@ async function importSingleUrl(repoUrl, button, idx) {
     : [];
 
   const body = { url: repoUrl };
-  if (pageMetadata) body.metadata = pageMetadata;
+  if (pageMetadata) {
+    body.metadata = pageMetadata;
+  } else {
+    const fetched = await fetchGitHubMetadata(repoUrl);
+    if (fetched) body.metadata = fetched;
+  }
   if (tags.length > 0) body.tags = tags;
 
   try {
@@ -213,14 +242,22 @@ async function importAllDetected() {
   const apiBase = appUrl.replace(/\/$/, '');
 
   btnImportAll.disabled = true;
-  btnImportAll.textContent = 'Importing…';
+  btnImportAll.textContent = 'Fetching metadata…';
 
-  const entries = detectedUrls.map((url, idx) => {
+  const entries = await Promise.all(detectedUrls.map(async (url, idx) => {
     const tags = (urlTags[idx] || '').split(',').map(t => t.trim()).filter(Boolean);
-    return tags.length > 0 ? { url, tags } : { url };
-  });
+    const entry = tags.length > 0 ? { url, tags } : { url };
+    if (pageMetadata) {
+      entry.metadata = pageMetadata;
+    } else {
+      const fetched = await fetchGitHubMetadata(url);
+      if (fetched) entry.metadata = fetched;
+    }
+    return entry;
+  }));
   const bulkBody = { entries };
-  if (pageMetadata) bulkBody.metadata = pageMetadata;
+
+  btnImportAll.textContent = 'Importing…';
 
   try {
     const resp = await fetch(`${apiBase}/api/repositories/bulk-import-urls`, {
@@ -395,17 +432,37 @@ async function runBookmarkImport() {
     return;
   }
 
-  // ── Step 2: single bulk request — one DB transaction for all URLs ───────────
-  setBmProgress(50, 100, `Importing ${total} repos into the database…`);
+  // ── Step 2: fetch metadata for each URL in concurrent batches ──────────────
+  setBmProgress(50, 100, `Fetching metadata for ${total} repos…`);
+
+  async function batchFetchMetadata(urls, batchSize = 10) {
+    const results = [];
+    for (let i = 0; i < urls.length; i += batchSize) {
+      const batch = urls.slice(i, i + batchSize);
+      const batchResults = await Promise.all(batch.map(url => fetchGitHubMetadata(url)));
+      results.push(...batchResults);
+    }
+    return results;
+  }
+  const metadataList = await batchFetchMetadata(foundBookmarks.map(bm => bm.url));
+
+  // ── Step 3: single bulk request with per-URL metadata ──────────────────────
+  setBmProgress(60, 100, `Importing ${total} repos into the database…`);
 
   let imported = 0, skipped = 0, failed = 0;
   let toRemove = [];
+
+  const entries = foundBookmarks.map((bm, i) => {
+    const entry = { url: normaliseGitHubUrl(bm.url) || bm.url };
+    if (metadataList[i]) entry.metadata = metadataList[i];
+    return entry;
+  });
 
   try {
     const resp = await fetch(`${apiBase}/api/repositories/bulk-import-urls`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls: foundBookmarks.map(bm => bm.url) }),
+      body: JSON.stringify({ entries }),
     });
 
     if (resp.ok) {
@@ -429,13 +486,13 @@ async function runBookmarkImport() {
     return;
   }
 
-  // ── Step 3: remove bookmarks in parallel ────────────────────────────────────
+  // ── Step 4: remove bookmarks in parallel ────────────────────────────────────
   if (toRemove.length > 0) {
     setBmProgress(90, 100, `Removing ${toRemove.length} bookmark(s) from browser…`);
     await Promise.all(toRemove.map(id => removeBookmark(id)));
   }
 
-  // ── Step 4: show results ────────────────────────────────────────────────────
+  // ── Step 5: show results ────────────────────────────────────────────────────
   bmProgressWrap.style.display = 'none';
   bmRImported.textContent = imported;
   bmRSkipped.textContent  = skipped;

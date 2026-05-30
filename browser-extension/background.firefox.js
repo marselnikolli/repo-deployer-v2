@@ -7,7 +7,7 @@
 
 'use strict';
 
-// { tabId: string[] } — deduplicated GitHub repo URLs per tab
+// { tabId: { urls: string[], metadata: object|null } } — per-tab cache
 const tabUrlCache = {};
 
 function normaliseGitHubUrl(url) {
@@ -43,7 +43,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
     const tabId = sender.tab?.id;
     if (tabId == null) return;
     const urls = (message.urls || []).filter(Boolean);
-    tabUrlCache[tabId] = urls;
+    tabUrlCache[tabId] = { urls, metadata: message.metadata || null };
     setBadge(tabId, urls);
     browser.tabs.query({ active: true, currentWindow: true }).then(([active]) => {
       if (active?.id === tabId) notifySidePanel();
@@ -56,9 +56,11 @@ browser.runtime.onMessage.addListener((message, sender) => {
     return browser.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
       const tabId = tab?.id;
       const cached = tabId != null ? tabUrlCache[tabId] : undefined;
-      if (cached !== undefined) return { urls: cached };
+      if (cached !== undefined) {
+        return { urls: cached.urls, metadata: cached.metadata };
+      }
       const norm = normaliseGitHubUrl(tab?.url || '');
-      return { urls: norm ? [norm] : [] };
+      return { urls: norm ? [norm] : [], metadata: null };
     });
   }
 });
@@ -70,8 +72,9 @@ browser.tabs.onRemoved.addListener((tabId) => {
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   const norm = normaliseGitHubUrl(tab.url || '');
-  tabUrlCache[tabId] = norm ? [norm] : [];
-  setBadge(tabId, tabUrlCache[tabId]);
+  const urls = norm ? [norm] : [];
+  tabUrlCache[tabId] = { urls, metadata: null };
+  setBadge(tabId, urls);
   browser.tabs.query({ active: true, currentWindow: true }).then(([active]) => {
     if (active?.id === tabId) notifySidePanel();
   });
